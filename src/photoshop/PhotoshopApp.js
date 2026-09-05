@@ -9,6 +9,7 @@ const {app} = photoshop;
 const {ElementPlacement} = photoshop.constants || {};
 const fs = uxp.storage.localFileSystem;
 const {formats} = uxp.storage;
+const {throwIfFailurePoint} = require("../dev/DevFailureInjector");
 const RESULTS_STATIC_URL = "http://localhost:8088/static";
 const RESULT_GROUP_NAME_REGEX = /[^a-zA-Z0-9\-_]+/g;
 
@@ -361,12 +362,14 @@ export class PhotoshopApp {
     if (!selectionArea) {
       throw new UiError("Please create a Photoshop selection before using Current Selection as the mask.");
     }
+    throwIfFailurePoint("after_selection_snapshot");
 
     console.log("[EasySD] Current Selection mask: creating temporary mask layer")
     const temporaryLayerId = await this.createLayer("EasySD Temporary Selection Mask");
     const selectionBackupName = `EasySD Selection Backup ${Date.now()}`;
     let selectionBackupId = null;
     try {
+      throwIfFailurePoint("after_selection_mask_layer_create");
       console.log(`[EasySD] Current Selection mask: activating temporary layer ${temporaryLayerId}`)
       await this.activateLayer(temporaryLayerId);
       await executeAsModal(async () => {
@@ -753,6 +756,7 @@ export class PhotoshopApp {
     const layerCopyId = await this.duplicateLayer(layer._id, fileNameWithoutExtension)
     console.log(`[EasySD] Background source compatibility copy created: ${JSON.stringify({originalLayerId: layer._id, copyLayerId: layerCopyId})}`)
     try {
+      throwIfFailurePoint("after_source_duplicate")
       const layerCopy = this.getLayerById(layerCopyId)
       console.log(`[EasySD] Background source export uses copy: ${JSON.stringify({copyLayerId: layerCopy._id, copyBounds: this.getLayerBounds(layerCopy)})}`)
       const exportedPath = await this.saveLayerAsImage(layerCopy, fileNameWithoutExtension, fileType)
@@ -776,6 +780,7 @@ export class PhotoshopApp {
   openImageAsDocument = async (fileNameWithoutPath) => {
     const imageFileEntry = await this.getImportFile(fileNameWithoutPath);
     const sourceDocumentId = app.activeDocument?._id ?? null;
+    let openedDocument = null;
     console.log(`[EasySD] app.open about to run: ${JSON.stringify({
       name: imageFileEntry.name,
       nativePath: imageFileEntry.nativePath,
@@ -788,6 +793,8 @@ export class PhotoshopApp {
     await executeAsModal(async () => {
       try {
         await app.open(imageFileEntry)
+        openedDocument = app.activeDocument;
+        throwIfFailurePoint("after_temp_result_open");
         console.log(`[EasySD] app.open succeeded: ${JSON.stringify({fileNameWithoutPath, sourceDocumentId, openedDocumentId: app.activeDocument?._id ?? null, keptOpen: true})}`)
       } catch (e) {
         console.error(`[EasySD] Could not open generated image: ${JSON.stringify({
@@ -798,6 +805,14 @@ export class PhotoshopApp {
           errorMessage: e.message,
           errorStack: e.stack,
         })}`)
+        if (openedDocument) {
+          try {
+            await openedDocument.closeWithoutSaving();
+            console.log(`[EasySD] Temporary result document closed after injected open failure: ${openedDocument._id}`)
+          } catch (cleanupError) {
+            console.error(`[EasySD] Temporary result document cleanup failed after open failure: ${JSON.stringify(describeThrownValue(cleanupError))}`)
+          }
+        }
         throw new UiError(`Could not open generated image ${fileNameWithoutPath}: ${e.message}`)
       }
     })
@@ -808,16 +823,30 @@ export class PhotoshopApp {
     const sourceDocumentId = app.activeDocument?._id ?? null;
     console.log(`[EasySD] New Document placement received: ${JSON.stringify({fileNameWithoutPath, sourceDocumentId})}`);
     const importedFile = await this.getImportFile(fileNameWithoutPath);
+    let openedDocument = null;
     console.log(`[EasySD] New Document temp file created: ${JSON.stringify({name: importedFile.name, nativePath: importedFile.nativePath, url: importedFile.url})}`);
     try {
       console.log(`[EasySD] New Document app.open start: ${JSON.stringify({fileNameWithoutPath, nativePath: importedFile.nativePath})}`);
-      const openResult = await executeAsModal(async () => app.open(importedFile));
+      const openResult = await executeAsModal(async () => {
+        const result = await app.open(importedFile);
+        openedDocument = app.activeDocument;
+        throwIfFailurePoint("after_temp_result_open");
+        return result;
+      });
       const openedDocumentId = app.activeDocument?._id ?? null;
       console.log(`[EasySD] New Document app.open result: ${JSON.stringify({openResult, openedDocumentId, duplicateToSource: false, closed: false, activeDocumentId: openedDocumentId})}`);
       console.log(`[EasySD] New Document temp cleanup skipped intentionally after successful open: ${importedFile.nativePath}`);
       return app.activeDocument;
     } catch (e) {
       console.error(`[EasySD] New Document open failed: ${JSON.stringify({fileNameWithoutPath, sourceDocumentId, errorName: e.name, errorMessage: e.message, errorStack: e.stack})}`);
+      if (openedDocument) {
+        try {
+          await executeAsModal(() => openedDocument.closeWithoutSaving());
+          console.log(`[EasySD] New Document temporary document closed after open failure: ${openedDocument._id}`)
+        } catch (cleanupError) {
+          console.error(`[EasySD] New Document cleanup failed after open failure: ${JSON.stringify(describeThrownValue(cleanupError))}`)
+        }
+      }
       throw e;
     }
   }
@@ -829,36 +858,49 @@ export class PhotoshopApp {
     // Open the image as a document
     const importedFile = await this.openImageAsDocument(fileNameWithoutPath)
 
+    let duplicatedLayer = null;
+    let temporaryDocument = null;
+    let temporaryDocumentClosed = false;
     try {
       // Find the new document. The existing cross-document duplication path is
       // intentionally preserved for compatibility with current Photoshop.
-      const newDocument = app.documents.filter(doc => !existingDocumentIds.includes(doc._id))[0]
-      if (!newDocument) {
+      temporaryDocument = app.documents.filter(doc => !existingDocumentIds.includes(doc._id))[0]
+      if (!temporaryDocument) {
         throw new UiError(`Could not find the temporary result document for ${fileNameWithoutPath}`)
       }
-      await executeAsModal(() => {
-        const sourceLayer = newDocument.layers[0]
+      await executeAsModal(async () => {
+        const sourceLayer = temporaryDocument.layers[0]
         if (!sourceLayer || sourceLayer.kind === "group") {
           throw new UiError(`Temporary result layer is not a pixel/art layer for ${fileNameWithoutPath}`)
         }
-        return sourceLayer.duplicate(sourceDocument).then(duplicatedLayer => {
-          duplicatedLayer.name = newLayerName
-          console.log(`[EasySD] Standalone result layer duplicated into target document: ${JSON.stringify({
-            fileNameWithoutPath,
-            sourceLayerId: sourceLayer._id,
-            duplicatedLayerId: duplicatedLayer._id,
-            duplicatedLayerKind: duplicatedLayer.kind,
-          })}`)
-          return newDocument.closeWithoutSaving()
-        })
+        throwIfFailurePoint("before_result_duplicate");
+        duplicatedLayer = await sourceLayer.duplicate(sourceDocument);
+        duplicatedLayer.name = newLayerName
+        console.log(`[EasySD] Standalone result layer duplicated into target document: ${JSON.stringify({
+          fileNameWithoutPath,
+          sourceLayerId: sourceLayer._id,
+          duplicatedLayerId: duplicatedLayer._id,
+          duplicatedLayerKind: duplicatedLayer.kind,
+        })}`)
+        await temporaryDocument.closeWithoutSaving();
+        temporaryDocumentClosed = true;
       })
     } catch (e) {
       throw e
     } finally {
       // Photoshop may retain the opened temp file after app.open(). Avoid
       // deleting it here because UXP can report a permission error.
+      if (temporaryDocument && !temporaryDocumentClosed) {
+        try {
+          await executeAsModal(() => temporaryDocument.closeWithoutSaving())
+          console.log(`[EasySD] New Layer temporary document cleaned up after failure: ${temporaryDocument._id}`)
+        } catch (cleanupError) {
+          console.error(`[EasySD] New Layer temporary document cleanup failed: ${JSON.stringify(describeThrownValue(cleanupError))}`)
+        }
+      }
       console.log(`[EasySD] New Layer temp file cleanup skipped after app.open(): ${importedFile.nativePath}`)
     }
+    return duplicatedLayer;
   }
 
   getDocumentPixelSize = (document) => {
@@ -917,6 +959,7 @@ export class PhotoshopApp {
         const resultLayer = resultDocument.layers[0]
         if (!resultLayer) throw new UiError("Could not find imported result layer")
         resultLayer.name = newLayerName
+        throwIfFailurePoint("before_result_duplicate")
         duplicatedResultLayer = await resultLayer.duplicate(sourceDocument)
         resultLayerDuplicated = true
         await resultDocument.closeWithoutSaving()
@@ -974,6 +1017,7 @@ export class PhotoshopApp {
           group = await document.createLayerGroup({name: groupName});
           groupCreated = true;
           console.log(`[EasySD] Created result batch group: ${JSON.stringify({groupName, requestId, groupId: group._id})}`);
+          throwIfFailurePoint("after_group_create");
         }
         const resultLayer = resultLayerOverride || document.activeLayers[0];
         if (!resultLayer) throw new UiError("Could not find imported result layer");
@@ -990,6 +1034,7 @@ export class PhotoshopApp {
         if (typeof resultLayer.move !== "function" || placeInside === undefined) {
           throw new UiError("Photoshop does not expose the layer move-to-group operation");
         }
+        throwIfFailurePoint("before_group_move");
         await resultLayer.move(group, placeInside);
         const parentId = resultLayer.parent?._id ?? null;
         if (parentId !== group._id) {

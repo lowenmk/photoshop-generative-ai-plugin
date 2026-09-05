@@ -7,6 +7,11 @@ import {MainPanel} from "./panels/MainPanel.jsx";
 import {entrypoints} from "uxp";
 import {ModalContext, ModalContextProvider} from "./contexts/ModalContext";
 import {AlertContextProvider} from "./contexts/AlertContext";
+import {startPhotoshopDevTestAgent} from "./dev/PhotoshopDevTestAgent";
+
+// The agent owns one poll loop for the UXP runtime. It disables itself after
+// one unavailable-endpoint discovery, so production bridges are unaffected.
+startPhotoshopDevTestAgent();
 
 const mainPanelController = new PanelController(() => (
   <AlertContextProvider>
