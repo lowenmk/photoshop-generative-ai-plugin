@@ -3,15 +3,17 @@ import React, {useContext} from "react";
 import {photoshopApp} from "../../photoshop/PhotoshopApp";
 import {Space1} from "../common/Spaces";
 import {AlertContext} from "../../contexts/AlertContext";
+import {localServerApi} from "../../api/localServerApi";
 
 const {STATIC_FILES_URL} = require("../../utils/Constants");
-const {chunkArray} = require("../../utils/utils");
 const {LineArrowDownIcon, LineArrowRightIcon} = require("../common/Icons");
 const {settingsStorage} = require("../../utils/SettingsStorage");
+const {trueOrUndefined} = require("../../utils/utils");
 
 const LAYER_NAME_MAX_PROMPT_CHARS = 20
 const LAYER_ALERT_CHARS = 10
 const NON_ALPHANUMERIC_REGEX = /[^a-zA-Z0-9\-_]+/g
+const PLACEMENT_MODES = {NEW_LAYER: "newLayer", NEW_DOCUMENT: "newDocument"}
 
 const ResultItem = (
   {
@@ -24,9 +26,22 @@ const ResultItem = (
     onCfgScaleChange,
     denoisingStrength,
     onDenoisingStrengthChange,
+    requestId,
+    resultIndex,
+    placementMode,
+    onPlacementModeChange,
+    onNavigate,
+    canPrevious,
+    canNext,
+    onDelete,
+    deletePending,
+    isSelected,
+    onSelect,
   }
 ) => {
   const alertContext = useContext(AlertContext);
+  const effectivePlacementMode = placementMode || PLACEMENT_MODES.NEW_LAYER;
+  console.log("[EasySD ResultItem] render", {resultIndex, imageFileName, thumbnailFileName, requestId, isSelected});
 
   const displayCfgScale = Math.round(cfgScale * 100) / 100
   const displayDenoisingStrength = denoisingStrength ? Math.round(denoisingStrength * 100) / 100 : 0
@@ -34,18 +49,24 @@ const ResultItem = (
   const onImageToLayerClick = async () => {
     try {
       const firstPromptChars = prompt.replace(NON_ALPHANUMERIC_REGEX, " ").slice(0, LAYER_NAME_MAX_PROMPT_CHARS)
-      let layerName = `${firstPromptChars}. Seed ${seed}. CFG ${displayCfgScale}`
+      let layerName = `Result ${resultIndex + 1} - Seed ${seed}`
       if (displayDenoisingStrength) {
         layerName += `. DS ${displayDenoisingStrength}`
       }
-      const topVisibleLayerId = photoshopApp.getTopVisibleLayerId()
-      if (topVisibleLayerId !== null) {
-        // Activate the top visible layer so that the new layer is not occluded by any of the existing layers
-        await photoshopApp.activateLayer(topVisibleLayerId)
+      if (effectivePlacementMode === PLACEMENT_MODES.NEW_DOCUMENT) {
+        console.log(`[EasySD] Result placement selected: ${JSON.stringify({placementMode: effectivePlacementMode, imageFileName})}`)
+        await photoshopApp.openResultAsNewDocument(imageFileName)
+      } else {
+        const topVisibleLayerId = photoshopApp.getTopVisibleLayerId()
+        if (topVisibleLayerId !== null) await photoshopApp.activateLayer(topVisibleLayerId)
+        await photoshopApp.openImageAsLayerInActiveDocument(layerName, imageFileName)
+        await photoshopApp.placeResultInBatchGroup(
+          photoshopApp.getActiveDocument()._id,
+          requestId,
+          prompt,
+          layerName,
+        )
       }
-      await photoshopApp.openImageAsLayerInActiveDocument(layerName, imageFileName)
-      const trimmedLayerName = `${layerName.slice(0, LAYER_ALERT_CHARS)}...`
-      alertContext.setSuccess(<>Added result as layer "{trimmedLayerName}"</>)
     } catch (e) {
       alertContext.setError(<>{e.message}</>)
     }
@@ -69,13 +90,21 @@ const ResultItem = (
   return (
     <>
       <div className="container flexColumn resultItem">
-          <img src={`${STATIC_FILES_URL}/${thumbnailFileName}`} className="resultThumbnailImage"/>
+          <div>RESULT ITEM {resultIndex}</div>
+          <div>FILE: {thumbnailFileName}</div>
+          <img src={`${STATIC_FILES_URL}/${thumbnailFileName}`} className={`resultThumbnailImage ${isSelected ? "resultThumbnailSelected" : ""}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(); }}/>
           <div className="container flexRow justifyContentCenter">
+            <sp-picker value={effectivePlacementMode}>
+              <sp-menu slot="options" onClick={(e) => { console.log(`[EasySD] Placement selector changed: ${e.target.value}`); onPlacementModeChange(imageFileName, e.target.value); }}>
+                <sp-menu-item value={PLACEMENT_MODES.NEW_LAYER} selected={trueOrUndefined(effectivePlacementMode === PLACEMENT_MODES.NEW_LAYER)}>New Layer</sp-menu-item>
+                <sp-menu-item value={PLACEMENT_MODES.NEW_DOCUMENT} selected={trueOrUndefined(effectivePlacementMode === PLACEMENT_MODES.NEW_DOCUMENT)}>Open as Image</sp-menu-item>
+              </sp-menu>
+            </sp-picker>
             <sp-action-button
               class="resultControlsButton"
               variant="secondary"
               onClick={onImageToLayerClick}
-            >To Layer
+            >{effectivePlacementMode === PLACEMENT_MODES.NEW_DOCUMENT ? "Open Image" : "To Layer"}
             </sp-action-button>
           </div>
           <div className="container flexRow justifyContentCenter">
@@ -102,6 +131,14 @@ const ResultItem = (
               </sp-action-button>
             ) : null}
           </div>
+          {deletePending ? (
+            <div className="container flexRow resultDeleteInline">
+              <sp-action-button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(e, imageFileName, true); }}>Confirm</sp-action-button>
+              <sp-action-button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(e, imageFileName, false, true); }}>Cancel</sp-action-button>
+            </div>
+          ) : (
+            <sp-action-button class="resultControlsButton" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(e, imageFileName); }}>Delete Result</sp-action-button>
+          )}
       </div>
     </>
   )
@@ -117,10 +154,20 @@ const ResultGroup = (
     onSeedChange,
     onCfgScaleChange,
     onDenoisingStrengthChange,
+    requestId,
+    placementByResult,
+    onPlacementModeChange,
+    selectedIndex,
+    onNavigate,
+    onDeleteBatch,
+    onDelete,
+    pendingBatchDelete,
+    pendingResultDelete,
+    onSelect,
   }
 ) => {
-  const itemsChunkedInPairs = chunkArray(groupItems, 2)
   const promptAndNegativePrompt = prompt + (negativePrompt ? ` / ${negativePrompt}` : "");
+  const orderedItems = Array.isArray(groupItems) ? groupItems : Array.from(groupItems || []);
   return (
     <>
       <div className="container flexColumn">
@@ -137,61 +184,49 @@ const ResultGroup = (
             ><LineArrowDownIcon /></span>
           )}
           <div className="resultsPrompt">{promptAndNegativePrompt}</div>
+          <div className="container flexRow resultBatchNavigation" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+            <sp-action-button disabled={selectedIndex <= 0} onClick={() => onNavigate(-1)}>Previous</sp-action-button>
+            <sp-action-button disabled={selectedIndex >= orderedItems.length - 1} onClick={() => onNavigate(1)}>Next</sp-action-button>
+          </div>
+          {pendingBatchDelete ? (
+            <div className="container flexRow resultDeleteInline" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+              <sp-action-button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeleteBatch(e, requestId, true); }}>Confirm</sp-action-button>
+              <sp-action-button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeleteBatch(e, requestId, false, true); }}>Cancel</sp-action-button>
+            </div>
+          ) : (
+            <sp-action-button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeleteBatch(e, requestId); }}>Delete Batch</sp-action-button>
+          )}
         </div>
         <sp-divider size="medium"></sp-divider>
         <Space1 />
         {!isCollapsed ? (
           <>
-            {itemsChunkedInPairs.map(pair => (
-              <div
-                className="container flexRow justifyContentCenter"
-                key={`${pair[0].thumbnail_file_name}~${pair.legend >= 2 ? pair[1].thumbnail_file_name : ""}`}
-              >
-                  {pair.length >= 2 ? (
-                    <>
-                      <ResultItem
-                        prompt={prompt}
-                        imageFileName={pair[0].image_file_name}
-                        thumbnailFileName={pair[0].thumbnail_file_name}
-                        seed={pair[0].seed}
-                        onSeedChange={onSeedChange}
-                        cfgScale={pair[0].cfg_scale}
-                        onCfgScaleChange={onCfgScaleChange}
-                        denoisingStrength={pair[0].denoising_strength}
-                        onDenoisingStrengthChange={onDenoisingStrengthChange}
-                      />
-                      <ResultItem
-                        prompt={prompt}
-                        imageFileName={pair[1].image_file_name}
-                        thumbnailFileName={pair[1].thumbnail_file_name}
-                        seed={pair[1].seed}
-                        onSeedChange={onSeedChange}
-                        cfgScale={pair[1].cfg_scale}
-                        onCfgScaleChange={onCfgScaleChange}
-                        denoisingStrength={pair[1].denoising_strength}
-                        onDenoisingStrengthChange={onDenoisingStrengthChange}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <ResultItem
-                        prompt={prompt}
-                        imageFileName={pair[0].image_file_name}
-                        thumbnailFileName={pair[0].thumbnail_file_name}
-                        seed={pair[0].seed}
-                        onSeedChange={onSeedChange}
-                        cfgScale={pair[0].cfg_scale}
-                        onCfgScaleChange={onCfgScaleChange}
-                        denoisingStrength={pair[0].denoising_strength}
-                        onDenoisingStrengthChange={onDenoisingStrengthChange}
-                      />
-                      <div className="container flexColumn resultItem">
-                        <img className="resultThumbnailImage"/>
-                      </div>
-                    </>
-                  )}
-              </div>
-            ))}
+            <div className="resultsGrid">
+              {orderedItems.map((result, resultIndex) => (
+                <React.Fragment key={result.image_file_name}>
+                  <div>PARENT ITEM {resultIndex}</div>
+                  <ResultItem
+                  prompt={prompt}
+                  imageFileName={result.image_file_name}
+                  thumbnailFileName={result.thumbnail_file_name}
+                  seed={result.seed}
+                  onSeedChange={onSeedChange}
+                  cfgScale={result.cfg_scale}
+                  onCfgScaleChange={onCfgScaleChange}
+                  denoisingStrength={result.denoising_strength}
+                  onDenoisingStrengthChange={onDenoisingStrengthChange}
+                  requestId={requestId}
+                  resultIndex={resultIndex}
+                  placementMode={placementByResult[result.image_file_name] || PLACEMENT_MODES.NEW_LAYER}
+                  onPlacementModeChange={onPlacementModeChange}
+                  onDelete={onDelete}
+                  deletePending={pendingResultDelete === result.image_file_name}
+                  isSelected={selectedIndex === resultIndex}
+                  onSelect={() => onSelect(resultIndex)}
+                  />
+                </React.Fragment>
+              ))}
+            </div>
           </>
         ) : null}
       </div>
@@ -205,7 +240,11 @@ export class ResultsTab extends React.Component {
     super(props);
 
     const requestIds = new Set (this.props.resultGroups.map(resultGroup => resultGroup.request_id))
-    const collapsedResultsMap = settingsStorage.getResultsSettings().collapsedResultsMap
+    const storedCollapsedResultsMap = settingsStorage.getResultsSettings().collapsedResultsMap || {}
+    const collapsedResultsMap = Object.fromEntries(Object.entries(storedCollapsedResultsMap).map(([requestId, value]) => [
+      requestId,
+      typeof value === "string" ? value.toLowerCase() === "true" : Boolean(value),
+    ]))
 
     Object.keys(collapsedResultsMap).forEach((requestId) => {
       // Only load for requests which results are available to prevent unbounded growth of the map
@@ -216,8 +255,62 @@ export class ResultsTab extends React.Component {
 
     this.state = {
       collapsedResultsMap,
+      placementByResult: {},
+      selectedIndex: {},
     }
   }
+
+  onPlacementModeChange = (imageFileName, placementMode) => this.setState({
+    placementByResult: {...this.state.placementByResult, [imageFileName]: placementMode},
+  });
+  refreshResults = async () => {
+    const resultGroups = await localServerApi.getAllResults();
+    const selectedIndex = {...this.state.selectedIndex};
+    resultGroups.forEach(group => {
+      selectedIndex[group.request_id] = Math.min(selectedIndex[group.request_id] ?? 0, Math.max(0, group.group_items.length - 1));
+    });
+    this.setState({selectedIndex});
+    this.props.onResults(resultGroups);
+  };
+  onDeleteResult = async (event, imageFileName, confirmed = false, cancel = false) => {
+    console.log(`[EasySD] Delete Result clicked: ${imageFileName}`);
+    if (cancel) return this.cancelDelete();
+    if (confirmed) return this.confirmDelete();
+    this.setState({deleteConfirmation: {type: "result", imageFileName}});
+  }
+  onDeleteBatch = async (event, requestId, confirmed = false, cancel = false) => {
+    console.log(`[EasySD] Delete Batch clicked: ${requestId}`);
+    if (cancel) return this.cancelDelete();
+    if (confirmed) return this.confirmDelete();
+    this.setState({deleteConfirmation: {type: "batch", requestId}});
+  }
+  cancelDelete = () => this.setState({deleteConfirmation: null});
+  confirmDelete = async () => {
+    const confirmation = this.state.deleteConfirmation;
+    this.setState({deleteConfirmation: null});
+    try {
+      if (!confirmation) return;
+      if (confirmation.type === "result") {
+        console.log(`[EasySD] Delete Result confirmation result: true`);
+        console.log(`[EasySD] Delete Result API start: ${confirmation.imageFileName}`);
+        const response = await localServerApi.deleteResult(confirmation.imageFileName);
+        console.log(`[EasySD] Delete Result API response: ${JSON.stringify(response)}`);
+      } else {
+        console.log(`[EasySD] Delete Batch confirmation result: true`);
+        console.log(`[EasySD] Delete Batch API start: ${confirmation.requestId}`);
+        const response = await localServerApi.deleteResultBatch(confirmation.requestId);
+        console.log(`[EasySD] Delete Batch API response: ${JSON.stringify(response)}`);
+      }
+      console.log("[EasySD] Delete refresh start");
+      await this.refreshResults();
+      console.log("[EasySD] Delete refresh complete");
+    } catch (e) {
+      console.error("[EasySD] Delete failed", e);
+      this.setState({deleteError: e.message || String(e)});
+    }
+  }
+  onNavigate = (requestId, delta, count) => this.setState({selectedIndex: {...this.state.selectedIndex, [requestId]: Math.max(0, Math.min(count - 1, (this.state.selectedIndex[requestId] ?? 0) + delta))}});
+  onSelect = (requestId, index) => this.setState({selectedIndex: {...this.state.selectedIndex, [requestId]: index}});
 
   onIsCollapsedChange = (requestId, isCollapsed) => {
     try {
@@ -246,7 +339,7 @@ export class ResultsTab extends React.Component {
     let {collapsedResultsMap} = this.state;
 
     if (resultGroups.length <= 0) {
-      return (
+          return (
         <div className="container flexRow justifyContentCenter">
           <sp-body size="S">No results to show, please use Dream tab first</sp-body>
         </div>
@@ -254,9 +347,11 @@ export class ResultsTab extends React.Component {
     }
     return (
       <>
+        {this.state.deleteError ? <sp-body>{this.state.deleteError}</sp-body> : null}
         <div className="container flexColumn">
           {resultGroups.map(resultGroup => {
-            const isCollapsed = collapsedResultsMap[resultGroup.request_id] ?? false;
+            const storedValue = collapsedResultsMap[resultGroup.request_id];
+            const isCollapsed = storedValue === undefined ? false : Boolean(storedValue);
             return (
               <ResultGroup
                 key={resultGroup.request_id}
@@ -268,6 +363,17 @@ export class ResultsTab extends React.Component {
                 onSeedChange={onSeedChange}
                 onCfgScaleChange={onCfgScaleChange}
                 onDenoisingStrengthChange={onDenoisingStrengthChange}
+                requestId={resultGroup.request_id}
+                placementByResult={this.state.placementByResult}
+                onPlacementModeChange={this.onPlacementModeChange}
+                selectedIndex={this.state.selectedIndex[resultGroup.request_id] ?? 0}
+                onNavigate={(delta) => this.onNavigate(resultGroup.request_id, delta, resultGroup.group_items.length)}
+                onDeleteBatch={this.onDeleteBatch}
+                onDelete={this.onDeleteResult}
+                pendingBatchDelete={this.state.deleteConfirmation?.type === "batch" && this.state.deleteConfirmation.requestId === resultGroup.request_id}
+                pendingResultDelete={this.state.deleteConfirmation?.type === "result" ? this.state.deleteConfirmation.imageFileName : null}
+                selectedIndex={this.state.selectedIndex[resultGroup.request_id] ?? 0}
+                onSelect={(index) => this.onSelect(resultGroup.request_id, index)}
               />
             );
           })}

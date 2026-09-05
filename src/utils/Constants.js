@@ -4,6 +4,11 @@ export const InferenceType = Object.freeze({
   INPAINT: "inpaint",
 });
 
+export const MaskSource = Object.freeze({
+  CURRENT_SELECTION: "currentSelection",
+  MASK_LAYER: "maskLayer",
+});
+
 export const STATIC_FILES_URL = "http://localhost:8088/static"
 
 export const PAINTBRUSH_TOOL = "paintbrushTool";
@@ -28,6 +33,10 @@ const DEFAULT_STABLE_DIFFUSION_SETTINGS = {
   samplingSteps: 20,
   maskBlur: 12,
   maskedContent: "original",
+  maskSource: MaskSource.MASK_LAYER,
+  selectionInvert: false,
+  selectionFeather: 5,
+  selectionExpand: 0,
   restoreFaces: false,
 }
 

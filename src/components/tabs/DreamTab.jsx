@@ -18,10 +18,55 @@ const {SourceLayerControls} = require("./dream/SourceLayerControls");
 const {MaskLayerControls} = require("./dream/MaskLayerControls");
 const {PromptControls} = require("./dream/PromptControls");
 const {trueOrUndefined} = require("../../utils/utils");
-const {InferenceType, STATIC_FILES_URL} = require("../../utils/Constants");
+const {InferenceType, MaskSource, STATIC_FILES_URL} = require("../../utils/Constants");
 const {getRandomRequestId} = require("../../utils/utils");
 const {photoshopApp} = require("../../photoshop/PhotoshopApp");
 const {localServerApi} = require("../../api/localServerApi");
+
+const getSafeErrorMessage = (error) => {
+  if (error?.message) {
+    return error.message;
+  }
+  if (typeof error?.toString === "function") {
+    const stringValue = error.toString();
+    if (stringValue && stringValue !== "[object Object]") {
+      return stringValue;
+    }
+  }
+  try {
+    const json = JSON.stringify(error);
+    if (json && json !== "{}") {
+      return json;
+    }
+  } catch (serializationError) {
+    console.error("Could not serialize thrown value", serializationError);
+  }
+  return "Unknown error";
+};
+
+const INPAINT_REQUEST_LOG_FIELDS = [
+  "document_id", "document_width", "document_height", "selection_area",
+  "source_image_path", "source_image_x", "source_image_y",
+  "mask_image_path", "mask_image_x", "mask_image_y", "mask_blur",
+  "masked_content", "denoising_strength", "seed", "cfg_scale",
+  "sampling_method", "sampling_steps", "image_count",
+];
+
+const logInpaintRequest = (request, selectionControls) => {
+  const requestFields = {};
+  for (const field of INPAINT_REQUEST_LOG_FIELDS) {
+    requestFields[field] = request[field];
+  }
+  const scalarTypes = {};
+  for (const field of INPAINT_REQUEST_LOG_FIELDS) {
+    scalarTypes[field] = typeof request[field];
+  }
+  for (const field of ["selectionInvert", "selectionFeather", "selectionExpand"]) {
+    scalarTypes[field] = typeof selectionControls[field];
+  }
+  console.log("[EasySD] Outgoing inpaint request", requestFields);
+  console.log("[EasySD] Outgoing inpaint scalar types", scalarTypes);
+};
 
 const preloadImages = async (imageUrls) => {
   for (let imageUrl of imageUrls) {
@@ -69,6 +114,10 @@ class DreamTabInternal extends React.Component {
       inferenceType,
       maskBlur,
       maskedContent,
+      maskSource,
+      selectionInvert,
+      selectionFeather,
+      selectionExpand,
     } = this.state;
 
     await onBeforeDreamButtonClicked();
@@ -114,6 +163,10 @@ class DreamTabInternal extends React.Component {
         inferenceType,
         maskBlur,
         maskedContent,
+        maskSource,
+        selectionInvert,
+        selectionFeather,
+        selectionExpand,
       );
 
       // Give another progress bump after exporting all of the layers
@@ -128,12 +181,23 @@ class DreamTabInternal extends React.Component {
         ...img2imgOrInpaintingRequestPart,
         ...inpaintingRequestPart,
       }
+      if (inpaintingRequestPart.effective_selection_area) {
+        request.selection_area = inpaintingRequestPart.effective_selection_area;
+        delete request.effective_selection_area;
+      }
+      console.log(`[EasySD] Selection area flow: ${JSON.stringify({
+        originalSelectionArea: selectionArea,
+        effectiveSelectionArea: request.selection_area,
+        expand: selectionExpand,
+        inferenceType,
+      })}`)
       // Enqueue image processing request
       if (inferenceType === InferenceType.TXT_2_IMG) {
         await localServerApi.enqueueTxt2ImgRequest(request)
       } else if (inferenceType === InferenceType.IMG_2_IMG) {
         await localServerApi.enqueueImg2ImgRequest(request)
       } else {
+        logInpaintRequest(request, {selectionInvert, selectionFeather, selectionExpand});
         await localServerApi.enqueueInpaintRequest(request)
       }
 
@@ -148,12 +212,20 @@ class DreamTabInternal extends React.Component {
     } catch (e) {
       console.log("Error processing images")
       console.error(e);
+      console.error("Error processing images details", {
+        typeofError: typeof e,
+        stringValue: String(e),
+        name: e?.name,
+        message: e?.message,
+        stack: e?.stack,
+      });
+      const errorMessage = getSafeErrorMessage(e);
       if (e instanceof DisplayAsMainAlertError) {
-        this.props.alertContext.setError(<>{e.message}</>)
+        this.props.alertContext.setError(<>{errorMessage}</>)
       } else {
         // Show alert because this is a long-running action and I don't expect the user to stare at the screen
         // all the time before it's complete, so in case of an error it's best to be as clear as possible
-        photoshopApp.showAlert(`Error generating images: ${e.message}`)
+        photoshopApp.showAlert(`Error generating images: ${errorMessage}`)
       }
     } finally {
       onProgress({
@@ -164,20 +236,32 @@ class DreamTabInternal extends React.Component {
     }
   }
 
-  async getInpaintingRequestPart(activeDocument, inferenceType, maskBlur, maskedContent) {
+  async getInpaintingRequestPart(activeDocument, inferenceType, maskBlur, maskedContent, maskSource, selectionInvert, selectionFeather, selectionExpand) {
     if (inferenceType !== InferenceType.INPAINT) {
       return {};
     }
 
-    // Find the latest visible mask layer and export as transparent-enabled png
+    if (maskSource === MaskSource.CURRENT_SELECTION) {
+      const selectionMask = await photoshopApp.exportSelectionAsMask({
+        invert: selectionInvert,
+        feather: Number(selectionFeather) || 0,
+        expand: Number(selectionExpand) || 0,
+      });
+      return {
+        mask_blur: maskBlur,
+        masked_content: maskedContent,
+        ...selectionMask,
+        effective_selection_area: Number(selectionExpand) !== 0
+          ? selectionMask.effective_selection_area
+          : undefined,
+      };
+    }
+
+    // Existing Mask Layer workflow remains unchanged.
     const maskImageFileName = `doc${activeDocument._id}-mask`
     const maskLayer = photoshopApp.getLatestVisibleMaskLayer();
     const maskImagePath = await photoshopApp.saveLayerAsImage(maskLayer, maskImageFileName, "png");
-
-    // When exporting a layer as transparent png Photoshop cuts the image area down to its non-transparent pixels
-    // We need to find out what that area is to pass it to backend so that it knows where to position the mask
     const maskArea = photoshopApp.getLayerBounds(maskLayer)
-
     return {
       mask_blur: maskBlur,
       masked_content: maskedContent,
@@ -292,6 +376,11 @@ class DreamTabInternal extends React.Component {
     this.setState({ maskedContent });
   }
 
+  onMaskSourceChange = (maskSource) => this.setState({maskSource});
+  onSelectionInvertChange = (selectionInvert) => this.setState({selectionInvert});
+  onSelectionFeatherChange = (selectionFeather) => this.setState({selectionFeather});
+  onSelectionExpandChange = (selectionExpand) => this.setState({selectionExpand});
+
   onRestoreFacesChange = (restoreFaces) => {
     this.setState({ restoreFaces });
   }
@@ -322,6 +411,10 @@ class DreamTabInternal extends React.Component {
       samplingSteps,
       maskBlur,
       maskedContent,
+      maskSource,
+      selectionInvert,
+      selectionFeather,
+      selectionExpand,
       restoreFaces,
       isAdvancedOptionsExpanded,
       showTxt2ImgInstructions,
@@ -405,6 +498,14 @@ class DreamTabInternal extends React.Component {
 
           <MaskLayerControls
             inferenceType={inferenceType}
+            maskSource={maskSource}
+            selectionInvert={selectionInvert}
+            selectionFeather={selectionFeather}
+            selectionExpand={selectionExpand}
+            onMaskSourceChange={this.onMaskSourceChange}
+            onSelectionInvertChange={this.onSelectionInvertChange}
+            onSelectionFeatherChange={this.onSelectionFeatherChange}
+            onSelectionExpandChange={this.onSelectionExpandChange}
           />
 
           <Space3 />

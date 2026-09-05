@@ -46,7 +46,7 @@ class Automatic1111Result(BaseModel):
             seed=int(seed),
             subseed=int(subseed),
             cfg_scale=float(cfg_scale),
-            denoising_strength=float(denoising_strength),
+            denoising_strength=None if denoising_strength == "None" else float(denoising_strength),
             prompt=prompt,
             negative_prompt=negative_prompt,
         )

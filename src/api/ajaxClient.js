@@ -29,7 +29,14 @@ class AjaxClient {
           throw new InternalServerError()
         }
         if (httpErrorCode >= 400) {
-          throw new BadRequestError(errorBody?.detail)
+          const detail = errorBody?.detail;
+          const detailMessage = typeof detail === "string"
+            ? detail
+            : JSON.stringify(detail ?? errorBody);
+          const badRequestError = new BadRequestError(detailMessage);
+          badRequestError.status = httpErrorCode;
+          badRequestError.responseBody = errorBody;
+          throw badRequestError;
         }
         throw Error("Something went totally wrong!");
       }
@@ -57,6 +64,10 @@ class AjaxClient {
 
   put = (url, requestBody) => {
     return this.request('put', url, requestBody)
+  }
+
+  delete = (url) => {
+    return this.request('delete', url)
   }
 }
 

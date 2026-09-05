@@ -284,6 +284,7 @@ class MainPanelInternal extends React.Component {
             {currentTab === MainTab.RESULTS ? (
               <ResultsTab
                 resultGroups={resultGroups}
+                onResults={this.onResults}
                 onSeedChange={this.onSeedChange}
                 onCfgScaleChange={this.onCfgScaleChange}
                 onDenoisingStrengthChange={this.onDenoisingStrengthChange}

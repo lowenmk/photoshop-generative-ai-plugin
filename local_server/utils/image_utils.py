@@ -152,6 +152,7 @@ def paste_image_onto_selection_in_new_image(
         image_to_paste: np.ndarray,
         selection_area: SelectionArea,
         scale_factor: Optional[float],
+        alpha_mask: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """
     Paste the generated image back onto the selection area in the original image but on a new RGBA image
@@ -188,7 +189,12 @@ def paste_image_onto_selection_in_new_image(
     # Set the alpha channel to fully opaque for the image region
     # TODO: BUG: set alpha channel to that of the source image so that we can generate on transparent layers
     # (I think the below should do it)
-    if maybe_scaled_image.shape[2] >= 4:
+    if alpha_mask is not None:
+        mask = alpha_mask[:, :, 0] if alpha_mask.ndim == 3 else alpha_mask
+        if mask.shape[:2] != maybe_scaled_image.shape[:2]:
+            mask = cv2.resize(mask, dsize=[maybe_scaled_image.shape[1], maybe_scaled_image.shape[0]], interpolation=cv2.INTER_LINEAR)
+        new_image[paste_y:paste_y+paste_height, paste_x:paste_x+paste_width, 3] = mask[:paste_height, :paste_width]
+    elif maybe_scaled_image.shape[2] >= 4:
         new_image[paste_y:paste_y+paste_height, paste_x:paste_x+paste_width, 3] = \
             maybe_scaled_image[:paste_height, :paste_width, 3]
     else:

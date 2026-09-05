@@ -171,6 +171,7 @@ class ImageGenerationService:
                     image_to_paste=generated_image,
                     selection_area=selection_area,
                     scale_factor=scale_factor,
+                    alpha_mask=mask_image_cropped_to_selection,
                 )
                 base_file_name = f"{request.document_id}-{request.request_id}-{request_time_string}-{generated_image_index}"
                 generated_image_index += 1

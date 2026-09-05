@@ -108,6 +108,9 @@ class LocalServerApi {
     ))["result_groups"]
   }
 
+  deleteResult = async (imageFileName) => ajaxClient.delete(`/results/result/${encodeURIComponent(imageFileName)}`)
+  deleteResultBatch = async (requestId) => ajaxClient.delete(`/results/batch/${encodeURIComponent(requestId)}`)
+
   getStoredPrompts = async () => {
     return (await ajaxClient.get(
       "/settings/prompts",

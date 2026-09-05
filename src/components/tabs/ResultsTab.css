@@ -1,6 +1,17 @@
 
 .resultItem {
-    flex: 0 1 300px;
+    flex: 1 1 150px;
+    min-width: 0;
+    max-width: 300px;
+    box-sizing: border-box;
+    padding: 6px;
+}
+
+.resultsGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    width: 100%;
 }
 
 .resultDescription {
@@ -10,7 +21,21 @@
 
 .resultThumbnailImage {
     width: 100%;
-    height: 100%;
+    height: auto;
+    display: block;
+    object-fit: contain;
+    cursor: pointer;
+    border: 2px solid transparent;
+    box-sizing: border-box;
+}
+
+.resultThumbnailSelected {
+    border-color: var(--uxp-host-link-color, #4f9cff);
+}
+
+.resultBatchNavigation {
+    margin-left: auto;
+    gap: 4px;
 }
 
 .resultThumbnailImageSpace {
@@ -28,9 +53,33 @@
 }
 
 .resultControlsButton {
-    flex: 1 1 auto;
+    flex: 1 1 100%;
     cursor: pointer;
     margin: 0;
     padding: 0;
     height: 26px;
+}
+
+.resultItem .flexRow {
+    width: 100%;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.resultItem sp-picker,
+.resultItem sp-action-button {
+    min-width: 0;
+    max-width: 100%;
+}
+
+@media (max-width: 420px) {
+    .resultItem {
+        flex-basis: 50%;
+        padding: 4px;
+    }
+
+    .resultItem sp-picker,
+    .resultItem sp-action-button {
+        width: 100%;
+    }
 }

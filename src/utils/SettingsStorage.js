@@ -41,8 +41,16 @@ class SettingsStorage {
     }
     try {
       const parsed = JSON.parse(storedSettings);
+      const normalized = {...parsed};
+      if (Object.prototype.hasOwnProperty.call(normalized, "selectionInvert")) {
+        if (typeof normalized.selectionInvert === "string") {
+          normalized.selectionInvert = normalized.selectionInvert.toLowerCase() === "true";
+        } else {
+          normalized.selectionInvert = Boolean(normalized.selectionInvert);
+        }
+      }
       // console.log('Loading settings', JSON.stringify(parsed, null, 2))
-      return parsed;
+      return {...DEFAULT_DREAM_TAB_SETTINGS, ...normalized};
     } catch (e) {
       console.error("Failed to parse Dream settings", storedSettings)
       return DEFAULT_DREAM_TAB_SETTINGS

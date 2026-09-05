@@ -80,7 +80,6 @@ def generate_txt2img(request: Automatic1111GenerateTxt2ImgRequest):
         document_width=document_width,
         document_height=document_height,
     )
-
     scaled_width, scaled_height, scale_factor = get_scale_factor(selection_area)
 
     run_configurations = run_configuration_provider.build_txt2img_run_configurations(
@@ -126,6 +125,7 @@ def generate_img2img(request: Automatic1111GenerateImg2ImgRequest):
         document_width=document_width,
         document_height=document_height,
     )
+    print(f"Inpaint selection area: {selection_area}")
 
     source_image_cropped_scaled, scale_factor = extract_image_from_selection_and_scale(source_image, selection_area)
     # cv2.imwrite(str(OUTPUT_FOLDER_PATH / f"debug_{request.request_id}_source_cropped_scaled.png"), source_image_cropped_scaled)
@@ -189,6 +189,7 @@ def generate_inpaint(request: Automatic1111GenerateInpaintRequest):
 
     mask_image_cropped_scaled, _ = extract_image_from_selection_and_scale(user_input_mask_image, selection_area)
     mask_image_cropped_scaled_converted = convert_mask_image(mask_image_cropped_scaled)
+    print(f"Inpaint generation size: {source_image_cropped_scaled.shape[1]}x{source_image_cropped_scaled.shape[0]}, mask size: {mask_image_cropped_scaled_converted.shape[1]}x{mask_image_cropped_scaled_converted.shape[0]}, result paste area: {selection_area}")
     # cv2.imwrite(str(OUTPUT_FOLDER_PATH / f"debug_{request.request_id}_mask_cropped_scaled.png"), mask_image_cropped_scaled_converted)
 
     run_configurations = run_configuration_provider.build_img2img_run_configurations(
