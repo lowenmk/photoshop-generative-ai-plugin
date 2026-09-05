@@ -90,8 +90,6 @@ const ResultItem = (
   return (
     <>
       <div className="container flexColumn resultItem">
-          <div>RESULT ITEM {resultIndex}</div>
-          <div>FILE: {thumbnailFileName}</div>
           <img src={`${STATIC_FILES_URL}/${thumbnailFileName}`} className={`resultThumbnailImage ${isSelected ? "resultThumbnailSelected" : ""}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(); }}/>
           <div className="container flexRow justifyContentCenter">
             <sp-picker value={effectivePlacementMode}>
@@ -201,11 +199,10 @@ const ResultGroup = (
         <Space1 />
         {!isCollapsed ? (
           <>
-            <div className="resultsGrid">
+            <div className="container flexRow resultsItemsContainer">
               {orderedItems.map((result, resultIndex) => (
-                <React.Fragment key={result.image_file_name}>
-                  <div>PARENT ITEM {resultIndex}</div>
-                  <ResultItem
+                <ResultItem
+                  key={result.image_file_name}
                   prompt={prompt}
                   imageFileName={result.image_file_name}
                   thumbnailFileName={result.thumbnail_file_name}
@@ -223,8 +220,7 @@ const ResultGroup = (
                   deletePending={pendingResultDelete === result.image_file_name}
                   isSelected={selectedIndex === resultIndex}
                   onSelect={() => onSelect(resultIndex)}
-                  />
-                </React.Fragment>
+                />
               ))}
             </div>
           </>
