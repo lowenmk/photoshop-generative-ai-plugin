@@ -13,7 +13,6 @@ const {AdvancedOptions} = require("./dream/AdvancedOptions");
 const {InstructionsBanner} = require("./dream/InstructionsBanner");
 const {settingsStorage} = require("../../utils/SettingsStorage");
 const {InferenceTypeSelection} = require("./dream/InferenceTypeSelection");
-const {Space1, Space3} = require("../common/Spaces");
 const {SourceLayerControls} = require("./dream/SourceLayerControls");
 const {MaskLayerControls} = require("./dream/MaskLayerControls");
 const {PromptControls} = require("./dream/PromptControls");
@@ -436,16 +435,21 @@ class DreamTabInternal extends React.Component {
       onDenoisingStrengthChange,
       storedPrompts,
       onStoredPromptsChange,
+      progress,
     } = this.props;
     const isImg2ImgOrInpainting = inferenceType === InferenceType.IMG_2_IMG || inferenceType === InferenceType.INPAINT;
     const cancelButtonShown = isProcessing
     const cancelButtonDisabled = !canCancelProgress
     const dreamButtonDisabled = isLoadingModels || (isImg2ImgOrInpainting && !sourceLayer);
     const isModelDropdownDisabled = isProcessing;
+    const seedSummary = seed === undefined || seed === null || seed === "" || seed === -1 ? "random" : seed;
+    const advancedSummary = `Seed: ${seedSummary} · CFG: ${cfgScale}${isImg2ImgOrInpainting ? ` · Denoise: ${denoisingStrength}` : ""}`;
 
     return (
       <>
         <div className="container flexColumn">
+          <div className="workflowZone setupZone">
+          <sp-label class="zoneLabel">MODE / MODEL</sp-label>
           <InferenceTypeSelection
             inferenceType={inferenceType}
             onInferenceTypeChange={(inferenceType) => this.onInferenceTypeChange(inferenceType)}
@@ -468,28 +472,22 @@ class DreamTabInternal extends React.Component {
             isLoadingModels={isLoadingModels}
             onIsLoadingModelsChange={onIsLoadingModelsChange}
           />
+          </div>
 
-          <Space3 />
-          {cancelButtonShown ? (
-            <div className="container flexRow justifyContentCenter">
-              <sp-button
-                class="dreamButton"
-                variant="primary"
-                disabled={trueOrUndefined(cancelButtonDisabled)}
-                onClick={() => this.onCancelButtonClick()}
-              >Cancel</sp-button>
-            </div>
-          ) : (
-            <div className="container flexRow justifyContentCenter">
-              <sp-button
-                class="dreamButton"
-                variant="cta"
-                disabled={trueOrUndefined(dreamButtonDisabled)}
-                onClick={() => this.onDreamButtonClick()}
-              >Dream</sp-button>
-            </div>
-          )}
+          <div className="workflowZone promptZone">
+            <sp-label class="zoneLabel">PROMPT</sp-label>
+            <PromptControls
+              prompt={prompt}
+              onPromptChange={(prompt) => this.onPromptChange(prompt)}
+              negativePrompt={negativePrompt}
+              onNegativePromptChange={(negativePrompt) => this.onNegativePromptChange(negativePrompt)}
+              storedPrompts={storedPrompts}
+              onStoredPromptsChange={onStoredPromptsChange}
+            />
+          </div>
 
+          <div className="workflowZone sourceMaskZone">
+          <sp-label class="zoneLabel">SOURCE / MASK</sp-label>
           <SourceLayerControls
             inferenceType={inferenceType}
             sourceLayer={sourceLayer}
@@ -507,44 +505,62 @@ class DreamTabInternal extends React.Component {
             onSelectionFeatherChange={this.onSelectionFeatherChange}
             onSelectionExpandChange={this.onSelectionExpandChange}
           />
+          </div>
 
-          <Space3 />
-          <PromptControls
-            prompt={prompt}
-            onPromptChange={(prompt) => this.onPromptChange(prompt)}
-            negativePrompt={negativePrompt}
-            onNegativePromptChange={(negativePrompt) => this.onNegativePromptChange(negativePrompt)}
-            storedPrompts={storedPrompts}
-            onStoredPromptsChange={onStoredPromptsChange}
-          />
+          <div className="workflowZone generationZone">
+            <sp-slider
+              min="1"
+              max="20"
+              value={imageCount}
+              value-label=" images"
+              onInput={(e) => this.onImageCountChange(e.target.value)}
+            >
+              <sp-label slot="label">Number of images</sp-label>
+            </sp-slider>
+            {cancelButtonShown ? (
+              <sp-button
+                class="dreamButton secondaryAction"
+                variant="secondary"
+                disabled={trueOrUndefined(cancelButtonDisabled)}
+                onClick={() => this.onCancelButtonClick()}
+              >Cancel</sp-button>
+            ) : (
+              <sp-button
+                class="dreamButton primaryAction"
+                variant="cta"
+                disabled={trueOrUndefined(dreamButtonDisabled)}
+                onClick={() => this.onDreamButtonClick()}
+              >Generate</sp-button>
+            )}
+            {isProcessing ? (
+              <div className="generateProgressBarContainer">
+                <sp-progressbar class="generateProgressBar" max={100} value={progress}></sp-progressbar>
+              </div>
+            ) : null}
+          </div>
 
-          <sp-slider
-            min="1"
-            max="20"
-            value={imageCount}
-            value-label=" images"
-            onInput={(e) => this.onImageCountChange(e.target.value)}
-          >
-            <sp-label slot="label">Number of images to dream</sp-label>
-          </sp-slider>
-
-          <SeedCheckboxAndInput
-            seed={seed}
-            onSeedChange={onSeedChange}
-          ></SeedCheckboxAndInput>
+          <div className="workflowZone advancedZone">
+            <div className="advancedSummary">{advancedSummary}</div>
+            {isAdvancedOptionsExpanded ? (
+              <div className="advancedGenerationControls">
+                <SeedCheckboxAndInput
+                  seed={seed}
+                  onSeedChange={onSeedChange}
+                ></SeedCheckboxAndInput>
 
           <CfgScaleCheckboxAndInput
             cfgScale={cfgScale}
             onCfgScaleChange={onCfgScaleChange}
           ></CfgScaleCheckboxAndInput>
 
-          <DenoisingStrengthCheckboxAndInput
+                <DenoisingStrengthCheckboxAndInput
             inferenceType={inferenceType}
             denoisingStrength={denoisingStrength}
             onDenoisingStrengthChange={onDenoisingStrengthChange}
-          ></DenoisingStrengthCheckboxAndInput>
+                ></DenoisingStrengthCheckboxAndInput>
+              </div>
+            ) : null}
 
-          <Space1 />
           <AdvancedOptions
             inferenceType={inferenceType}
             samplingMethod={samplingMethod}
@@ -560,6 +576,7 @@ class DreamTabInternal extends React.Component {
             isAdvancedOptionsExpanded={isAdvancedOptionsExpanded}
             onIsAdvancedOptionsExpandedChange={this.onIsAdvancedOptionsExpandedChange}
           ></AdvancedOptions>
+          </div>
         </div>
       </>
     );

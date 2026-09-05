@@ -2,6 +2,25 @@ import React from "react";
 
 import "./Icons.css";
 
+export const TrashIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 18 18">
+    <path d="M3 5h12v11H3zM7 2h4l1 2H6l1-2zm-5 2h14v2H2zM7 8v5m4-5v5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+);
+
+export const EyeIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 18 18">
+    <path d="M1.5 9s2.5-4 7.5-4 7.5 4 7.5 4-2.5 4-7.5 4-7.5-4-7.5-4z" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <circle cx="9" cy="9" r="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+);
+
+export const EyeClosedIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 18 18">
+    <path d="M2 2l14 14M3 6.5C1.9 7.3 1.5 8 1.5 8s2.5 4 7.5 4c1.1 0 2-.2 2.8-.5M7 4.2c.6-.1 1.3-.2 2-.2 5 0 7.5 4 7.5 4s-.5.8-1.5 1.6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+);
+
 // Useful links:
 // View SVG path details: https://yqnn.github.io/svg-path-editor/
 // Reverse SVG path: https://codepen.io/enxaneta/pen/WWPYqQ

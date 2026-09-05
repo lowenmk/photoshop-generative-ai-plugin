@@ -18,7 +18,7 @@ export const MainTabSelection = ({ currentTab, onCurrentTabChange }) => {
           selected={trueOrUndefined(currentTab === MainTab.DREAM)}
           onClick={() => onCurrentTabChange(MainTab.DREAM)}
         >
-          {MainTab.DREAM}
+          Generate
         </TabItem>
         <TabItem
           fontSize="M"
@@ -26,15 +26,7 @@ export const MainTabSelection = ({ currentTab, onCurrentTabChange }) => {
           selected={trueOrUndefined(currentTab === MainTab.RESULTS)}
           onClick={() => onCurrentTabChange(MainTab.RESULTS)}
         >
-          {MainTab.RESULTS}
-        </TabItem>
-        <TabItem
-          fontSize="M"
-          value={MainTab.PROMPTS}
-          selected={trueOrUndefined(currentTab === MainTab.PROMPTS)}
-          onClick={() => onCurrentTabChange(MainTab.PROMPTS)}
-        >
-          {MainTab.PROMPTS}
+          History
         </TabItem>
       </TabGroup>
     </>

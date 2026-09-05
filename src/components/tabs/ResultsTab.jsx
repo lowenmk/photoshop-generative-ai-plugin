@@ -6,7 +6,7 @@ import {AlertContext} from "../../contexts/AlertContext";
 import {localServerApi} from "../../api/localServerApi";
 
 const {STATIC_FILES_URL} = require("../../utils/Constants");
-const {LineArrowDownIcon, LineArrowRightIcon} = require("../common/Icons");
+const {LineArrowDownIcon, LineArrowRightIcon, TrashIcon, EyeIcon, EyeClosedIcon} = require("../common/Icons");
 const {settingsStorage} = require("../../utils/SettingsStorage");
 const {trueOrUndefined} = require("../../utils/utils");
 
@@ -50,6 +50,8 @@ const ResultItem = (
     canPrevious,
     canNext,
     onDelete,
+    hidden,
+    onToggleHidden,
     deletePending,
     isSelected,
     onSelect,
@@ -100,6 +102,12 @@ const ResultItem = (
     }
   }
 
+  const onEyeToggleClick = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    onToggleHidden(imageFileName)
+  }
+
   const onCopySeedClick = async () => {
     onSeedChange(seed)
     alertContext.setSuccess(<>Set seed to {seed}</>)
@@ -115,11 +123,29 @@ const ResultItem = (
     alertContext.setSuccess(<>Set Denoising Strength to {denoisingStrength}</>)
   }
 
+  const resultUtilityRow = (
+    <div className="container flexRow resultUtilityRow">
+      {!hidden ? (
+        <sp-action-button class="resultUtilityButton" title="Delete result" aria-label="Delete result" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(e, imageFileName); }}><TrashIcon /></sp-action-button>
+      ) : <span className="resultUtilitySpacer" />}
+      <sp-action-button class="resultUtilityButton resultVisibilityButton" title={hidden ? "Show result" : "Hide result"} aria-label={hidden ? "Show result" : "Hide result"} onClick={onEyeToggleClick}>{hidden ? <EyeClosedIcon /> : <EyeIcon />}</sp-action-button>
+    </div>
+  )
+
+  if (hidden) {
+    return (
+      <div className="container flexColumn resultItem resultItemHidden">
+        <div className="resultHiddenContent"><sp-body size="S">Hidden result</sp-body></div>
+        {resultUtilityRow}
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="container flexColumn resultItem">
           <img src={`${STATIC_FILES_URL}/${thumbnailFileName}`} className={`resultThumbnailImage ${isSelected ? "resultThumbnailSelected" : ""}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(); }}/>
-          <div className="container flexRow justifyContentCenter">
+          <div className="container flexColumn resultPlacementControls">
             <sp-picker value={effectivePlacementMode}>
               <sp-menu slot="options" onClick={(e) => { console.log(`[EasySD] Placement selector changed: ${e.target.value}`); onPlacementModeChange(imageFileName, e.target.value); }}>
                 <sp-menu-item value={PLACEMENT_MODES.NEW_LAYER} selected={trueOrUndefined(effectivePlacementMode === PLACEMENT_MODES.NEW_LAYER)}>New Layer</sp-menu-item>
@@ -128,33 +154,34 @@ const ResultItem = (
               </sp-menu>
             </sp-picker>
             <sp-action-button
-              class="resultControlsButton"
+              class="resultControlsButton resultPrimaryButton"
               variant="secondary"
               onClick={onImageToLayerClick}
             >{effectivePlacementMode === PLACEMENT_MODES.NEW_DOCUMENT ? "Open Image" : effectivePlacementMode === PLACEMENT_MODES.REPLACE_SELECTION ? "Replace Area" : "To Layer"}
             </sp-action-button>
           </div>
-          <div className="container flexRow justifyContentCenter">
+          <div className="container flexRow justifyContentCenter resultMetadataRow">
             <sp-action-button
-              class="resultControlsButton"
+              class="resultControlsButton resultMetadataButton"
               variant="secondary"
+              title="Copy"
               onClick={onCopySeedClick}
-            >Copy Seed
+            >Seed
             </sp-action-button>
-          </div>
-          <div className="container flexRow justifyContentCenter">
             <sp-action-button
-              class="resultControlsButton"
+              class="resultControlsButton resultMetadataButton"
               variant="secondary"
+              title="Copy"
               onClick={onCopyCfgScaleClick}
-            >Copy CFG {displayCfgScale}
+            >CFG {displayCfgScale}
             </sp-action-button>
             {!!denoisingStrength ? (
               <sp-action-button
-                class="resultControlsButton"
+                class="resultControlsButton resultMetadataButton"
                 variant="secondary"
+                title="Copy"
                 onClick={onCopyDenoisingStrengthClick}
-              >Copy DS {displayDenoisingStrength}
+              >DS {displayDenoisingStrength}
               </sp-action-button>
             ) : null}
           </div>
@@ -164,7 +191,7 @@ const ResultItem = (
               <sp-action-button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(e, imageFileName, false, true); }}>Cancel</sp-action-button>
             </div>
           ) : (
-            <sp-action-button class="resultControlsButton" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(e, imageFileName); }}>Delete Result</sp-action-button>
+            resultUtilityRow
           )}
       </div>
     </>
@@ -183,11 +210,13 @@ const ResultGroup = (
     onDenoisingStrengthChange,
     requestId,
     placementByResult,
+    hiddenResultsByFile,
     onPlacementModeChange,
     selectedIndex,
     onNavigate,
     onDeleteBatch,
     onDelete,
+    onToggleHidden,
     pendingBatchDelete,
     pendingResultDelete,
     onSelect,
@@ -197,8 +226,8 @@ const ResultGroup = (
   const orderedItems = Array.isArray(groupItems) ? groupItems : Array.from(groupItems || []);
   return (
     <>
-      <div className="container flexColumn">
-        <div className="container flexRow advancedOptionsLabel" onClick={onIsCollapsedChange}>
+      <div className="container flexColumn resultsBatch">
+        <div className="container flexRow advancedOptionsLabel resultsBatchHeader" onClick={onIsCollapsedChange}>
           {isCollapsed ? (
             <span
               className="advancedOptionsIcon"
@@ -210,7 +239,7 @@ const ResultGroup = (
               slot="icon"
             ><LineArrowDownIcon /></span>
           )}
-          <div className="resultsPrompt">{promptAndNegativePrompt}</div>
+          <div className="resultsPrompt"><sp-body size="S">{promptAndNegativePrompt}</sp-body></div>
           <div className="container flexRow resultBatchNavigation" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
             <sp-action-button disabled={trueOrUndefined(selectedIndex <= 0)} onClick={() => onNavigate(-1)}>Previous</sp-action-button>
             <sp-action-button disabled={trueOrUndefined(selectedIndex >= orderedItems.length - 1)} onClick={() => onNavigate(1)}>Next</sp-action-button>
@@ -246,6 +275,8 @@ const ResultGroup = (
                   placementMode={placementByResult[result.image_file_name] || PLACEMENT_MODES.NEW_LAYER}
                   onPlacementModeChange={onPlacementModeChange}
                   onDelete={onDelete}
+                  hidden={hiddenResultsByFile[result.image_file_name] === true}
+                  onToggleHidden={onToggleHidden}
                   deletePending={pendingResultDelete === result.image_file_name}
                   isSelected={selectedIndex === resultIndex}
                   onSelect={() => onSelect(resultIndex)}
@@ -281,12 +312,19 @@ export class ResultsTab extends React.Component {
     this.state = {
       collapsedResultsMap,
       placementByResult: {},
+      hiddenResultsByFile: {},
       selectedIndex: {},
     }
   }
 
   onPlacementModeChange = (imageFileName, placementMode) => this.setState({
     placementByResult: {...this.state.placementByResult, [imageFileName]: placementMode},
+  });
+  onToggleHidden = (imageFileName) => this.setState({
+    hiddenResultsByFile: {
+      ...this.state.hiddenResultsByFile,
+      [imageFileName]: !this.state.hiddenResultsByFile[imageFileName],
+    },
   });
   refreshResults = async () => {
     const resultGroups = await localServerApi.getAllResults();
@@ -395,6 +433,8 @@ export class ResultsTab extends React.Component {
                 onNavigate={(delta) => this.onNavigate(resultGroup.request_id, delta, resultGroup.group_items.length)}
                 onDeleteBatch={this.onDeleteBatch}
                 onDelete={this.onDeleteResult}
+                hiddenResultsByFile={this.state.hiddenResultsByFile}
+                onToggleHidden={this.onToggleHidden}
                 pendingBatchDelete={this.state.deleteConfirmation?.type === "batch" && this.state.deleteConfirmation.requestId === resultGroup.request_id}
                 pendingResultDelete={this.state.deleteConfirmation?.type === "result" ? this.state.deleteConfirmation.imageFileName : null}
                 selectedIndex={this.state.selectedIndex[resultGroup.request_id] ?? 0}

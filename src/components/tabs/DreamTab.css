@@ -1,7 +1,7 @@
 .instructionsBanner {
     background-color: var(--uxp-host-widget-hover-background-color);
     border-radius: 4px;
-    padding: 10px 10px 4px 10px;
+    padding: 6px 8px 2px 8px;
 }
 
 .instructionsIcon {
@@ -30,8 +30,14 @@
 
 .dreamPromptTextArea {
     flex: 1 1 auto;
-    height: 80px;
+    height: 96px;
     cursor: text;
+    border: 1px solid transparent;
+    border-radius: 4px;
+}
+
+.dreamPromptTextArea:focus {
+    border-color: var(--uxp-host-link-text-color);
 }
 
 .storedPromptKeysSelectionAreaContainer {
@@ -52,5 +58,52 @@
 }
 
 .dreamButton {
-    flex: 0 1 250px;
+    width: 100%;
+    min-height: 40px;
+    height: 40px;
+}
+
+.workflowZone {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.setupZone {
+    gap: 2px;
+}
+
+.promptZone {
+    margin-top: 10px;
+}
+
+.sourceMaskZone {
+    margin-top: 8px;
+}
+
+.generationZone {
+    margin-top: 12px;
+}
+
+.advancedZone {
+    margin-top: 10px;
+}
+
+.zoneLabel {
+    color: var(--uxp-host-border-color);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+
+.advancedSummary {
+    color: var(--uxp-host-text-color);
+    font-size: var(--uxp-host-font-size);
+    padding: 2px 0;
+}
+
+.advancedGenerationControls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }

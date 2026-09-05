@@ -3,7 +3,7 @@ import {photoshopApp} from "../photoshop/PhotoshopApp";
 require("../components/common/Common.css");
 const {PromptsTab} = require ("../components/tabs/PromptsTab");
 const {FullScreenModalSelector, ModalName} = require ("../components/modals/FullScreenModalSelector");
-const {Space2, Space3} = require ("../components/common/Spaces");
+const {Space2} = require ("../components/common/Spaces");
 const {runShowingErrors} = require ("../exceptions/exceptionHandlers");
 const {NetworkError} = require ("../exceptions/Exceptions");
 const React = require("react");
@@ -224,7 +224,6 @@ class MainPanelInternal extends React.Component {
 
   render() {
     const {modalName} = this.props.modalContext.modal;
-    const {alertContent} = this.props.alertContext.topAlert;
 
     const {
       currentTab,
@@ -243,22 +242,13 @@ class MainPanelInternal extends React.Component {
     } = this.state;
     return (
       <div className="container flexColumn">
-        {!!alertContent ? (
-          <MainAlert />
-        ) : isProcessing ? (
-          <div className="container flexRow generateProgressBarContainer">
-            <sp-progressbar class="generateProgressBar" max={100} value={progress}></sp-progressbar>
-          </div>
-        ) : (
-          <Space3 />
-        )}
-
         {!!modalName ? (
           <FullScreenModalSelector modalName={modalName}/>
         ) : (
           <>
             <MainTabSelection currentTab={currentTab} onCurrentTabChange={this.onCurrentTabChange}/>
             <Space2 />
+            <MainAlert />
 
             {currentTab === MainTab.DREAM ? (
               <DreamTab
@@ -270,6 +260,7 @@ class MainPanelInternal extends React.Component {
                 onDenoisingStrengthChange={this.onDenoisingStrengthChange}
                 isProcessing={isProcessing}
                 canCancelProgress={canCancelProgress}
+                progress={progress}
                 onBeforeDreamButtonClicked={this.onBeforeDreamButtonClicked}
                 onProgress={this.onProgress}
                 onResults={this.onResults}

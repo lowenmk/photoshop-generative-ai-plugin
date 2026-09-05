@@ -46,6 +46,26 @@
     cursor: pointer;
 }
 
+.primaryAction {
+    border-radius: 4px;
+    min-height: 40px;
+    height: 40px;
+}
+
+.secondaryAction {
+    border-radius: 4px;
+    min-height: 28px;
+    height: 28px;
+}
+
+.tertiaryAction {
+    border-radius: 4px;
+    min-height: 24px;
+    height: 24px;
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
 .settingsModalButton {
     flex: 0 1 150px;
 }
@@ -118,12 +138,12 @@
 }
 
 .tabItem.selected {
-    border-color: var(--uxp-host-text-color);
+    border-color: var(--uxp-host-link-text-color);
 }
 
 .generateProgressBarContainer {
-    /*Same height as alertContainer and Space3. This is a hack for absolute positioning seemingly not working*/
-    height: 16px;
+    width: 100%;
+    min-height: 8px;
 }
 
 .generateProgressBar {
