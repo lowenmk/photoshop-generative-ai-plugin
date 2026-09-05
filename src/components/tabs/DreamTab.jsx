@@ -21,6 +21,7 @@ const {InferenceType, MaskSource, STATIC_FILES_URL} = require("../../utils/Const
 const {getRandomRequestId} = require("../../utils/utils");
 const {photoshopApp} = require("../../photoshop/PhotoshopApp");
 const {localServerApi} = require("../../api/localServerApi");
+const {getThumbnailSrc} = require("../../api/thumbnailCache");
 
 const getSafeErrorMessage = (error) => {
   if (error?.message) {
@@ -67,9 +68,18 @@ const logInpaintRequest = (request, selectionControls) => {
   console.log("[EasySD] Outgoing inpaint scalar types", scalarTypes);
 };
 
+const preloadedThumbnailUrls = new Set();
+
 const preloadImages = async (imageUrls) => {
   for (let imageUrl of imageUrls) {
-    await fetch(imageUrl)
+    if (preloadedThumbnailUrls.has(imageUrl)) continue
+    preloadedThumbnailUrls.add(imageUrl)
+    try {
+      await getThumbnailSrc(imageUrl)
+    } catch (error) {
+      preloadedThumbnailUrls.delete(imageUrl)
+      throw error
+    }
   }
 }
 
@@ -301,20 +311,21 @@ class DreamTabInternal extends React.Component {
 
   fetchResultGroups = async (requestId) => {
     try {
-      const resultGroups = await localServerApi.getAllResults()
+      const resultGroups = await localServerApi.getAllResults({forceRefresh: true})
 
       const thisRequestGroup = resultGroups.find(result => result.request_id === requestId)
       if (thisRequestGroup) {
         // TODO: this doesn't seem to help Windows render faster. Fix
         const thumbnailImages = thisRequestGroup.group_items.map(group_item => `${STATIC_FILES_URL}/${group_item.thumbnail_file_name}`)
-        console.log("Preloading images", thumbnailImages)
-        await preloadImages(thumbnailImages)
+        const uniqueThumbnailImages = thumbnailImages.filter((url, index) => thumbnailImages.indexOf(url) === index)
+        console.log("Preloading images", uniqueThumbnailImages)
+        await preloadImages(uniqueThumbnailImages)
       }
       return resultGroups
     } catch (e) {
       console.log("Error generating results images")
       console.error(e);
-      return []
+      throw e
     }
   }
 

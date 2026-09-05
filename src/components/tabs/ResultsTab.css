@@ -29,6 +29,14 @@
     box-sizing: border-box;
 }
 
+.resultThumbnailPlaceholder {
+    width: 100%;
+    height: 120px;
+    background-color: var(--uxp-host-widget-hover-background-color);
+    border: 2px solid transparent;
+    box-sizing: border-box;
+}
+
 .resultThumbnailSelected {
     border-color: var(--uxp-host-link-text-color);
     box-shadow: 0 0 0 1px var(--uxp-host-link-text-color);
@@ -60,6 +68,18 @@
 .resultDeleteInline sp-action-button {
     height: 26px;
     min-height: 26px;
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
+.resultBatchNavButton {
+    flex: 0 0 26px;
+    width: 26px;
+    padding: 0;
+}
+
+.resultBatchDeleteButton {
+    min-width: 58px;
     padding-left: 6px;
     padding-right: 6px;
 }

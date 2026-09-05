@@ -144,6 +144,19 @@ export const LineArrowRightIcon = () => (
   </svg>
 );
 
+export const LineArrowLeftIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg"
+       width="15px"
+       height="15px"
+       viewBox="0 0 80.593 122.88"
+       style={{stroke: '#aaaaaa', fill: '#999999'}}
+  >
+    <g>
+      <polygon points="80.593,0 49.772,0 0,61.44 49.772,122.88 80.593,122.88 30.82,61.44 80.593,0"/>
+    </g>
+  </svg>
+);
+
 export const LineArrowDownIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg"
        width="15px"

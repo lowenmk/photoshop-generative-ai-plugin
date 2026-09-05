@@ -23,6 +23,18 @@ export const ModelsDropdown = ({ disabled, isLoadingModels, onIsLoadingModelsCha
     }
   }
 
+  const refreshModels = async () => {
+    try {
+      onIsLoadingModelsChange(true);
+      const models = await localServerApi.refreshAvailableModels()
+      setModels(models)
+    } catch (e) {
+      alertContext.setError(<>{e.message}</>)
+    } finally {
+      onIsLoadingModelsChange(false);
+    }
+  }
+
   const selectModel = (selectedModelHash) => {
     const updated_models = models.map(model => ({
       modelName: model.modelName,
@@ -82,7 +94,7 @@ export const ModelsDropdown = ({ disabled, isLoadingModels, onIsLoadingModelsCha
         <sp-action-button
           class="refreshButton"
           title="Refresh models"
-          onClick={reloadModels}
+          onClick={refreshModels}
           disabled={trueOrUndefined(disabled || isLoadingModels)}
         >
           <span slot="icon"><RefreshIcon /></span>

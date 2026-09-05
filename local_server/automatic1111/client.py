@@ -14,6 +14,7 @@ IMG2IMG_PATH = "/sdapi/v1/img2img"
 TXT2IMG_PATH = "/sdapi/v1/txt2img"
 PROGRESS_PATH = "/sdapi/v1/progress?skip_current_image=false"
 SD_MODELS_PATH = "/sdapi/v1/sd-models"
+REFRESH_CHECKPOINTS_PATH = "/sdapi/v1/refresh-checkpoints"
 OPTIONS_PATH = "/sdapi/v1/options"
 SAMPLERS_PATH = "/sdapi/v1/samplers"
 INTERRUPT_PATH = "/sdapi/v1/interrupt"
@@ -137,6 +138,15 @@ class Automatic1111Client:
             return models
         except requests.exceptions.ConnectionError:
             raise self._bad_connection_error()
+
+    def refresh_sd_models(self):
+        try:
+            response = requests.post(f"{self._get_base_automatic1111_url()}{REFRESH_CHECKPOINTS_PATH}")
+            response.raise_for_status()
+        except requests.exceptions.ConnectionError:
+            raise self._bad_connection_error()
+        except requests.exceptions.RequestException as e:
+            raise bad_request(f"Automatic1111 checkpoint refresh failed: {e}")
 
     @staticmethod
     def _get_ui_model_hash_from_item(item):

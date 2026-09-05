@@ -1,12 +1,13 @@
 import "./ResultsTab.css";
-import React, {useContext} from "react";
+import React, {useContext, useEffect, useState} from "react";
 import {photoshopApp} from "../../photoshop/PhotoshopApp";
+const {getThumbnailSrc, removeThumbnailSrc} = require("../../api/thumbnailCache");
 import {Space1} from "../common/Spaces";
 import {AlertContext} from "../../contexts/AlertContext";
 import {localServerApi} from "../../api/localServerApi";
 
 const {STATIC_FILES_URL} = require("../../utils/Constants");
-const {LineArrowDownIcon, LineArrowRightIcon, TrashIcon, EyeIcon, EyeClosedIcon} = require("../common/Icons");
+const {LineArrowDownIcon, LineArrowRightIcon, LineArrowLeftIcon, TrashIcon, EyeIcon, EyeClosedIcon} = require("../common/Icons");
 const {settingsStorage} = require("../../utils/SettingsStorage");
 const {trueOrUndefined} = require("../../utils/utils");
 
@@ -58,11 +59,26 @@ const ResultItem = (
   }
 ) => {
   const alertContext = useContext(AlertContext);
+  const thumbnailUrl = `${STATIC_FILES_URL}/${thumbnailFileName}`;
+  const [thumbnailSrc, setThumbnailSrc] = useState(null);
   const effectivePlacementMode = placementMode || PLACEMENT_MODES.NEW_LAYER;
   console.log("[EasySD ResultItem] render", {resultIndex, imageFileName, thumbnailFileName, requestId, isSelected});
 
   const displayCfgScale = Math.round(cfgScale * 100) / 100
   const displayDenoisingStrength = denoisingStrength ? Math.round(denoisingStrength * 100) / 100 : 0
+
+  useEffect(() => {
+    let cancelled = false;
+    setThumbnailSrc(null);
+    getThumbnailSrc(thumbnailUrl)
+      .then(src => {
+        if (!cancelled) setThumbnailSrc(src);
+      })
+      .catch(error => {
+        console.error(`[EasySD thumbnail cache] Failed ${thumbnailUrl}`, error);
+      });
+    return () => { cancelled = true; };
+  }, [thumbnailUrl]);
 
   const onImageToLayerClick = async () => {
     try {
@@ -144,7 +160,11 @@ const ResultItem = (
   return (
     <>
       <div className="container flexColumn resultItem">
-          <img src={`${STATIC_FILES_URL}/${thumbnailFileName}`} className={`resultThumbnailImage ${isSelected ? "resultThumbnailSelected" : ""}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(); }}/>
+          {thumbnailSrc ? (
+            <img src={thumbnailSrc} className={`resultThumbnailImage ${isSelected ? "resultThumbnailSelected" : ""}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(); }}/>
+          ) : (
+            <div className="resultThumbnailPlaceholder" aria-label="Loading thumbnail" />
+          )}
           <div className="container flexColumn resultPlacementControls">
             <sp-picker value={effectivePlacementMode}>
               <sp-menu slot="options" onClick={(e) => { console.log(`[EasySD] Placement selector changed: ${e.target.value}`); onPlacementModeChange(imageFileName, e.target.value); }}>
@@ -241,8 +261,8 @@ const ResultGroup = (
           )}
           <div className="resultsPrompt"><sp-body size="S">{promptAndNegativePrompt}</sp-body></div>
           <div className="container flexRow resultBatchNavigation" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-            <sp-action-button disabled={trueOrUndefined(selectedIndex <= 0)} onClick={() => onNavigate(-1)}>Previous</sp-action-button>
-            <sp-action-button disabled={trueOrUndefined(selectedIndex >= orderedItems.length - 1)} onClick={() => onNavigate(1)}>Next</sp-action-button>
+            <sp-action-button class="resultBatchNavButton" title="Previous result" aria-label="Previous result" disabled={trueOrUndefined(selectedIndex <= 0)} onClick={() => onNavigate(-1)}><span slot="icon"><LineArrowLeftIcon /></span></sp-action-button>
+            <sp-action-button class="resultBatchNavButton" title="Next result" aria-label="Next result" disabled={trueOrUndefined(selectedIndex >= orderedItems.length - 1)} onClick={() => onNavigate(1)}><span slot="icon"><LineArrowRightIcon /></span></sp-action-button>
           </div>
           {pendingBatchDelete ? (
             <div className="container flexRow resultDeleteInline" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
@@ -250,7 +270,7 @@ const ResultGroup = (
               <sp-action-button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeleteBatch(e, requestId, false, true); }}>Cancel</sp-action-button>
             </div>
           ) : (
-            <sp-action-button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeleteBatch(e, requestId); }}>Delete Batch</sp-action-button>
+            <sp-action-button class="resultBatchDeleteButton" title="Delete batch" aria-label="Delete batch" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeleteBatch(e, requestId); }}><span slot="icon"><TrashIcon /></span>Batch</sp-action-button>
           )}
         </div>
         <sp-divider size="medium"></sp-divider>
@@ -326,13 +346,14 @@ export class ResultsTab extends React.Component {
       [imageFileName]: !this.state.hiddenResultsByFile[imageFileName],
     },
   });
-  refreshResults = async () => {
-    const resultGroups = await localServerApi.getAllResults();
+  applyCachedResults = (resultGroups, removedFileNames = []) => {
     const selectedIndex = {...this.state.selectedIndex};
+    const hiddenResultsByFile = {...this.state.hiddenResultsByFile};
+    removedFileNames.forEach(fileName => delete hiddenResultsByFile[fileName]);
     resultGroups.forEach(group => {
       selectedIndex[group.request_id] = Math.min(selectedIndex[group.request_id] ?? 0, Math.max(0, group.group_items.length - 1));
     });
-    this.setState({selectedIndex});
+    this.setState({selectedIndex, hiddenResultsByFile, deleteConfirmation: null});
     this.props.onResults(resultGroups);
   };
   onDeleteResult = async (event, imageFileName, confirmed = false, cancel = false) => {
@@ -356,17 +377,31 @@ export class ResultsTab extends React.Component {
       if (confirmation.type === "result") {
         console.log(`[EasySD] Delete Result confirmation result: true`);
         console.log(`[EasySD] Delete Result API start: ${confirmation.imageFileName}`);
+        const deletedResult = this.props.resultGroups
+          .flatMap(group => group.group_items)
+          .find(item => item.image_file_name === confirmation.imageFileName);
         const response = await localServerApi.deleteResult(confirmation.imageFileName);
         console.log(`[EasySD] Delete Result API response: ${JSON.stringify(response)}`);
+        if (deletedResult) removeThumbnailSrc(`${STATIC_FILES_URL}/${deletedResult.thumbnail_file_name}`);
+        const resultGroups = localServerApi.removeResultFromCache(confirmation.imageFileName);
+        this.applyCachedResults(resultGroups, [confirmation.imageFileName]);
       } else {
         console.log(`[EasySD] Delete Batch confirmation result: true`);
         console.log(`[EasySD] Delete Batch API start: ${confirmation.requestId}`);
         const response = await localServerApi.deleteResultBatch(confirmation.requestId);
         console.log(`[EasySD] Delete Batch API response: ${JSON.stringify(response)}`);
+        const removedFileNames = [];
+        const removedThumbnailUrls = [];
+        this.props.resultGroups
+          .filter(group => group.request_id === confirmation.requestId)
+          .forEach(group => group.group_items.forEach(item => {
+            removedFileNames.push(item.image_file_name);
+            removedThumbnailUrls.push(`${STATIC_FILES_URL}/${item.thumbnail_file_name}`);
+          }));
+        removedThumbnailUrls.forEach(removeThumbnailSrc);
+        const resultGroups = localServerApi.removeBatchFromCache(confirmation.requestId);
+        this.applyCachedResults(resultGroups, removedFileNames);
       }
-      console.log("[EasySD] Delete refresh start");
-      await this.refreshResults();
-      console.log("[EasySD] Delete refresh complete");
     } catch (e) {
       console.error("[EasySD] Delete failed", e);
       this.setState({deleteError: e.message || String(e)});

@@ -40,6 +40,15 @@ def get_models() -> Automatic1111GetModelsResponse:
     )
 
 
+@router.post("/sd/automatic1111/models/refresh")
+def refresh_models() -> Automatic1111GetModelsResponse:
+    automatic1111_client.refresh_sd_models()
+    models = automatic1111_client.get_sd_models()
+    return Automatic1111GetModelsResponse(
+        models=models,
+    )
+
+
 @router.post("/sd/automatic1111/models/current")
 def change_model(request: Automatic1111ChangeCurrentModelResponse):
     automatic1111_client.change_current_sd_model(request.model_hash)

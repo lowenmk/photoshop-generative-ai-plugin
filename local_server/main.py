@@ -8,6 +8,14 @@ from utils.constants import OUTPUT_FOLDER_PATH
 
 app = FastAPI()
 
+
+class ImmutableStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
 app.include_router(automatic1111_api.router)
 app.include_router(results_api.router)
 app.include_router(settings_api.router)
@@ -16,4 +24,4 @@ app.include_router(settings_api.router)
 @app.on_event("startup")
 async def startup_event():
     OUTPUT_FOLDER_PATH.mkdir(exist_ok=True, parents=True)
-    app.mount("/static", StaticFiles(directory=str(OUTPUT_FOLDER_PATH)), name="static")
+    app.mount("/static", ImmutableStaticFiles(directory=str(OUTPUT_FOLDER_PATH)), name="static")
