@@ -837,52 +837,185 @@ export class PhotoshopApp {
         throw new UiError(`Could not find the temporary result document for ${fileNameWithoutPath}`)
       }
       await executeAsModal(() => {
-        newDocument.layers[0].name = newLayerName
-        newDocument.layers[0].duplicate(sourceDocument)
-        console.log(`[EasySD] Result layer duplicated into target document: ${fileNameWithoutPath}`)
-        newDocument.closeWithoutSaving()
+        const sourceLayer = newDocument.layers[0]
+        if (!sourceLayer || sourceLayer.kind === "group") {
+          throw new UiError(`Temporary result layer is not a pixel/art layer for ${fileNameWithoutPath}`)
+        }
+        return sourceLayer.duplicate(sourceDocument).then(duplicatedLayer => {
+          duplicatedLayer.name = newLayerName
+          console.log(`[EasySD] Standalone result layer duplicated into target document: ${JSON.stringify({
+            fileNameWithoutPath,
+            sourceLayerId: sourceLayer._id,
+            duplicatedLayerId: duplicatedLayer._id,
+            duplicatedLayerKind: duplicatedLayer.kind,
+          })}`)
+          return newDocument.closeWithoutSaving()
+        })
       })
     } catch (e) {
       throw e
     } finally {
-      try {
-        if (typeof importedFile.delete === "function") {
-          await importedFile.delete()
-          console.log(`[EasySD] Result temp file deleted: ${importedFile.nativePath}`)
-        }
-      } catch (e) {
-        console.warn(`[EasySD] Could not delete result temp file: ${JSON.stringify({
-          nativePath: importedFile.nativePath,
-          errorName: e.name,
-          errorMessage: e.message,
-        })}`)
-      }
+      // Photoshop may retain the opened temp file after app.open(). Avoid
+      // deleting it here because UXP can report a permission error.
+      console.log(`[EasySD] New Layer temp file cleanup skipped after app.open(): ${importedFile.nativePath}`)
     }
   }
 
-  placeResultInBatchGroup = async (documentId, requestId, prompt, resultLayerName) => {
+  getDocumentPixelSize = (document) => {
+    const readDimension = (dimension) => {
+      if (typeof dimension === "number") return dimension
+      if (typeof dimension?._value === "number") return dimension._value
+      if (typeof dimension?.value === "number") return dimension.value
+      return null
+    }
+    return {
+      width: readDimension(document?.width),
+      height: readDimension(document?.height),
+    }
+  }
+
+  placeResultOverSelectedArea = async (documentId, newLayerName, fileNameWithoutPath, requestId, prompt) => {
+    const existingDocumentIds = app.documents.map(doc => doc._id)
+    const sourceDocument = app.documents.find(doc => doc._id === documentId)
+    if (!sourceDocument) {
+      throw new UiError(`Could not find target document ${documentId}`)
+    }
+
+    const sourceSize = this.getDocumentPixelSize(sourceDocument)
+    const importedFile = await this.openImageAsDocument(fileNameWithoutPath)
+    let resultDocument = null
+    let resultLayerDuplicated = false
+    let duplicatedResultLayer = null
+
+    try {
+      resultDocument = app.documents.find(doc => !existingDocumentIds.includes(doc._id))
+      if (!resultDocument) {
+        throw new UiError(`Could not find the temporary result document for ${fileNameWithoutPath}`)
+      }
+
+      const resultSize = this.getDocumentPixelSize(resultDocument)
+      console.log(`[EasySD] Replace Selected Area geometry: ${JSON.stringify({
+        sourceDocumentId: documentId,
+        sourceSize,
+        resultDocumentId: resultDocument._id,
+        resultSize,
+        fileNameWithoutPath,
+      })}`)
+      if (
+        sourceSize.width === null || sourceSize.height === null ||
+        resultSize.width === null || resultSize.height === null
+      ) {
+        throw new UiError("Cannot verify generated result dimensions for Replace Selected Area")
+      }
+      if (sourceSize.width !== resultSize.width || sourceSize.height !== resultSize.height) {
+        throw new UiError(
+          `Generated result size ${resultSize.width}x${resultSize.height} does not match target document ${sourceSize.width}x${sourceSize.height}`
+        )
+      }
+
+      await executeAsModal(async () => {
+        const resultLayer = resultDocument.layers[0]
+        if (!resultLayer) throw new UiError("Could not find imported result layer")
+        resultLayer.name = newLayerName
+        duplicatedResultLayer = await resultLayer.duplicate(sourceDocument)
+        resultLayerDuplicated = true
+        await resultDocument.closeWithoutSaving()
+      })
+      resultDocument = null
+
+      await this.placeResultInBatchGroup(documentId, requestId, prompt, newLayerName, duplicatedResultLayer)
+      console.log(`[EasySD] Replace Selected Area completed: ${JSON.stringify({
+        sourceDocumentId: documentId,
+        resultLayerDuplicated,
+        resultDocumentClosed: true,
+        nonDestructive: true,
+      })}`)
+    } catch (e) {
+      console.error(`[EasySD] Replace Selected Area failed: ${JSON.stringify({
+        fileNameWithoutPath,
+        sourceDocumentId: documentId,
+        resultLayerDuplicated,
+        error: describeThrownValue(e),
+      })}`)
+      if (duplicatedResultLayer) {
+        try {
+          await executeAsModal(async () => duplicatedResultLayer.delete())
+          console.log(`[EasySD] Replace Selected Area duplicated layer cleaned up after failure`)
+        } catch (cleanupError) {
+          console.error(`[EasySD] Replace Selected Area duplicated layer cleanup failed: ${JSON.stringify(describeThrownValue(cleanupError))}`)
+        }
+      }
+      throw e
+    } finally {
+      if (resultDocument) {
+        try {
+          await executeAsModal(async () => resultDocument.closeWithoutSaving())
+          console.log(`[EasySD] Replace Selected Area temporary document cleaned up: ${resultDocument._id}`)
+        } catch (cleanupError) {
+          console.error(`[EasySD] Replace Selected Area temporary document cleanup failed: ${JSON.stringify(describeThrownValue(cleanupError))}`)
+        }
+      }
+      // Photoshop may retain the opened temp file after app.open(). Deleting it
+      // here causes a FileSystemProvider permission error, so UXP temp storage
+      // owns eventual cleanup for Replace Selected Area.
+      console.log(`[EasySD] Replace Selected Area temp file cleanup skipped after app.open(): ${importedFile.nativePath}`)
+    }
+  }
+
+  placeResultInBatchGroup = async (documentId, requestId, prompt, resultLayerName, resultLayerOverride = null) => {
     const document = app.documents.find(doc => doc._id === documentId);
     if (!document) throw new UiError(`Could not find result document ${documentId}`);
     await executeAsModal(async () => {
       const groupName = `EasySD - ${prompt.replace(RESULT_GROUP_NAME_REGEX, " ").trim().slice(0, 24)} - ${requestId.slice(0, 8)}`;
       let group = document.layers.find(layer => layer.name === groupName && layer.kind === "group");
-      if (!group) {
-        group = await document.createLayerGroup({name: groupName});
-        console.log(`[EasySD] Created result batch group: ${JSON.stringify({groupName, requestId, groupId: group._id})}`);
+      let groupCreated = false;
+      try {
+        if (!group) {
+          group = await document.createLayerGroup({name: groupName});
+          groupCreated = true;
+          console.log(`[EasySD] Created result batch group: ${JSON.stringify({groupName, requestId, groupId: group._id})}`);
+        }
+        const resultLayer = resultLayerOverride || document.activeLayers[0];
+        if (!resultLayer) throw new UiError("Could not find imported result layer");
+        resultLayer.name = resultLayerName;
+        const placeInside = ElementPlacement?.PLACEINSIDE;
+        console.log(`[EasySD] Result group reparent diagnostics: ${JSON.stringify({
+          requestId,
+          groupId: group._id,
+          layerId: resultLayer._id,
+          layerMoveAvailable: typeof resultLayer.move === "function",
+          placeInside,
+          elementPlacementKeys: ElementPlacement ? Object.keys(ElementPlacement) : [],
+        })}`);
+        if (typeof resultLayer.move !== "function" || placeInside === undefined) {
+          throw new UiError("Photoshop does not expose the layer move-to-group operation");
+        }
+        await resultLayer.move(group, placeInside);
+        const parentId = resultLayer.parent?._id ?? null;
+        if (parentId !== group._id) {
+          throw new UiError(`Result layer ${resultLayer._id} was not placed inside result group ${group._id}`);
+        }
+        console.log(`[EasySD] Result placed in batch group: ${JSON.stringify({requestId, groupId: group._id, layerId: resultLayer._id, resultLayerName})}`);
+      } catch (e) {
+        if (groupCreated && group) {
+          try {
+            const groupIsEmpty = !group.layers || group.layers.length === 0;
+            if (groupIsEmpty) {
+              group.delete();
+              console.log(`[EasySD] Empty result group cleaned up after placement failure: ${group._id}`);
+            }
+          } catch (cleanupError) {
+            console.error(`[EasySD] Empty result group cleanup failed: ${JSON.stringify(describeThrownValue(cleanupError))}`);
+          }
+        }
+        throw e;
       }
-      const resultLayer = document.activeLayers[0];
-      if (!resultLayer) throw new UiError("Could not find imported result layer");
-      resultLayer.name = resultLayerName;
-      if (typeof resultLayer.move === "function" && ElementPlacement?.INSIDE !== undefined) {
-        await resultLayer.move(group, ElementPlacement.INSIDE);
-      }
-      console.log(`[EasySD] Result placed in batch group: ${JSON.stringify({requestId, groupId: group._id, layerId: resultLayer._id, resultLayerName})}`);
     });
   }
 
   openImageAsLayerInActiveDocument = async (newLayerName, fileNameWithoutPath) => {
     const activeDocument = this.getActiveDocument()
-    await this.openImageAsLayerInDocument(activeDocument._id, newLayerName, fileNameWithoutPath)
+    return await this.openImageAsLayerInDocument(activeDocument._id, newLayerName, fileNameWithoutPath)
   }
 
 }

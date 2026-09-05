@@ -13,7 +13,23 @@ const {trueOrUndefined} = require("../../utils/utils");
 const LAYER_NAME_MAX_PROMPT_CHARS = 20
 const LAYER_ALERT_CHARS = 10
 const NON_ALPHANUMERIC_REGEX = /[^a-zA-Z0-9\-_]+/g
-const PLACEMENT_MODES = {NEW_LAYER: "newLayer", NEW_DOCUMENT: "newDocument"}
+const PLACEMENT_MODES = {
+  NEW_LAYER: "newLayer",
+  NEW_DOCUMENT: "newDocument",
+  REPLACE_SELECTION: "replaceSelection",
+}
+
+const formatPlacementError = (error) => {
+  if (error?.message) return error.message
+  if (typeof error === "string" && error) return error
+  try {
+    const serialized = JSON.stringify(error)
+    if (serialized && serialized !== "{}") return serialized
+  } catch (serializationError) {
+    console.error("[EasySD] Could not serialize placement error", serializationError)
+  }
+  return "Result placement failed. See the Photoshop developer console for details."
+}
 
 const ResultItem = (
   {
@@ -56,19 +72,31 @@ const ResultItem = (
       if (effectivePlacementMode === PLACEMENT_MODES.NEW_DOCUMENT) {
         console.log(`[EasySD] Result placement selected: ${JSON.stringify({placementMode: effectivePlacementMode, imageFileName})}`)
         await photoshopApp.openResultAsNewDocument(imageFileName)
+      } else if (effectivePlacementMode === PLACEMENT_MODES.REPLACE_SELECTION) {
+        const sourceDocument = photoshopApp.getActiveDocument()
+        console.log(`[EasySD] Result placement selected: ${JSON.stringify({placementMode: effectivePlacementMode, imageFileName, sourceDocumentId: sourceDocument?._id ?? null})}`)
+        await photoshopApp.placeResultOverSelectedArea(
+          sourceDocument._id,
+          layerName,
+          imageFileName,
+          requestId,
+          prompt,
+        )
       } else {
         const topVisibleLayerId = photoshopApp.getTopVisibleLayerId()
         if (topVisibleLayerId !== null) await photoshopApp.activateLayer(topVisibleLayerId)
         await photoshopApp.openImageAsLayerInActiveDocument(layerName, imageFileName)
-        await photoshopApp.placeResultInBatchGroup(
-          photoshopApp.getActiveDocument()._id,
-          requestId,
-          prompt,
-          layerName,
-        )
+        alertContext.hideAlert()
       }
     } catch (e) {
-      alertContext.setError(<>{e.message}</>)
+      const errorMessage = formatPlacementError(e)
+      console.error("[EasySD] Result placement failed", {
+        placementMode: effectivePlacementMode,
+        imageFileName,
+        error: e,
+        errorMessage,
+      })
+      alertContext.setError(<>{errorMessage}</>)
     }
   }
 
@@ -96,13 +124,14 @@ const ResultItem = (
               <sp-menu slot="options" onClick={(e) => { console.log(`[EasySD] Placement selector changed: ${e.target.value}`); onPlacementModeChange(imageFileName, e.target.value); }}>
                 <sp-menu-item value={PLACEMENT_MODES.NEW_LAYER} selected={trueOrUndefined(effectivePlacementMode === PLACEMENT_MODES.NEW_LAYER)}>New Layer</sp-menu-item>
                 <sp-menu-item value={PLACEMENT_MODES.NEW_DOCUMENT} selected={trueOrUndefined(effectivePlacementMode === PLACEMENT_MODES.NEW_DOCUMENT)}>Open as Image</sp-menu-item>
+                <sp-menu-item value={PLACEMENT_MODES.REPLACE_SELECTION} selected={trueOrUndefined(effectivePlacementMode === PLACEMENT_MODES.REPLACE_SELECTION)}>Replace Selected Area</sp-menu-item>
               </sp-menu>
             </sp-picker>
             <sp-action-button
               class="resultControlsButton"
               variant="secondary"
               onClick={onImageToLayerClick}
-            >{effectivePlacementMode === PLACEMENT_MODES.NEW_DOCUMENT ? "Open Image" : "To Layer"}
+            >{effectivePlacementMode === PLACEMENT_MODES.NEW_DOCUMENT ? "Open Image" : effectivePlacementMode === PLACEMENT_MODES.REPLACE_SELECTION ? "Replace Area" : "To Layer"}
             </sp-action-button>
           </div>
           <div className="container flexRow justifyContentCenter">
@@ -183,8 +212,8 @@ const ResultGroup = (
           )}
           <div className="resultsPrompt">{promptAndNegativePrompt}</div>
           <div className="container flexRow resultBatchNavigation" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-            <sp-action-button disabled={selectedIndex <= 0} onClick={() => onNavigate(-1)}>Previous</sp-action-button>
-            <sp-action-button disabled={selectedIndex >= orderedItems.length - 1} onClick={() => onNavigate(1)}>Next</sp-action-button>
+            <sp-action-button disabled={trueOrUndefined(selectedIndex <= 0)} onClick={() => onNavigate(-1)}>Previous</sp-action-button>
+            <sp-action-button disabled={trueOrUndefined(selectedIndex >= orderedItems.length - 1)} onClick={() => onNavigate(1)}>Next</sp-action-button>
           </div>
           {pendingBatchDelete ? (
             <div className="container flexRow resultDeleteInline" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
