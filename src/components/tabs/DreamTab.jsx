@@ -83,7 +83,7 @@ const preloadImages = async (imageUrls) => {
   }
 }
 
-class DreamTabInternal extends React.Component {
+export class DreamTabInternal extends React.Component {
   constructor(props) {
     super(props);
     const savedOrDefaultSettings = settingsStorage.getDreamSettings()
@@ -131,7 +131,10 @@ class DreamTabInternal extends React.Component {
 
     await onBeforeDreamButtonClicked();
 
-    const requestId = getRandomRequestId()
+    const requestId = this.props.requestIdPrefix
+      ? `${this.props.requestIdPrefix}-${getRandomRequestId()}`
+      : getRandomRequestId()
+    this.lastRequestId = requestId;
     try {
       // TODO: this seems too convoluted, find a better way
       // Start the progress but don't enable cancellation yet because the server doesn't know about the request
@@ -229,6 +232,9 @@ class DreamTabInternal extends React.Component {
         stack: e?.stack,
       });
       const errorMessage = getSafeErrorMessage(e);
+      if (this.props.onGenerationError) {
+        this.props.onGenerationError(errorMessage, e);
+      }
       if (e instanceof DisplayAsMainAlertError) {
         this.props.alertContext.setError(<>{errorMessage}</>)
       } else {

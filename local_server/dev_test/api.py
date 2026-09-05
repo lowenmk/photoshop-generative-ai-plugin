@@ -4,12 +4,14 @@ import time
 
 from fastapi import APIRouter, HTTPException, Response
 
+from automatic1111.image_generation_service import image_generation_service
 from .command_service import ALLOWED_COMMAND_TYPES, broker
 from .models import DevCommandRequest
 
 
 router = APIRouter(prefix="/dev/photoshop")
 COMMAND_TIMEOUT_SECONDS = 10
+HARNESS_REQUEST_PREFIX = "test-phase1-"
 
 
 def _enqueue(command_type, payload):
@@ -18,9 +20,9 @@ def _enqueue(command_type, payload):
     return broker.enqueue(command_type, payload)
 
 
-async def _run(command_type, payload):
+async def _run(command_type, payload, timeout_seconds=COMMAND_TIMEOUT_SECONDS):
     command = _enqueue(command_type, payload)
-    completed = await asyncio.to_thread(broker.wait, command["command_id"], COMMAND_TIMEOUT_SECONDS)
+    completed = await asyncio.to_thread(broker.wait, command["command_id"], timeout_seconds)
     if not completed or completed["status"] not in {"completed", "failed"}:
         broker.expire(command["command_id"])
         raise HTTPException(status_code=504, detail="Photoshop test command timed out")
@@ -32,6 +34,16 @@ async def _run(command_type, payload):
 @router.get("/health")
 async def health():
     return broker.health()
+
+
+@router.get("/test/generation-state")
+async def generation_state():
+    return image_generation_service.generation_state()
+
+
+@router.post("/test/reset-generation")
+async def reset_generation():
+    return image_generation_service.reset_harness_generation(HARNESS_REQUEST_PREFIX)
 
 
 @router.post("/command")
@@ -96,6 +108,26 @@ async def clear_selection():
 @router.post("/test/export-current-selection")
 async def export_current_selection(payload: dict = None):
     return await _run("export_current_selection_mask", payload or {})
+
+
+@router.post("/test/generate/txt2img")
+async def generate_txt2img(payload: dict = None):
+    return await _run("generate_txt2img", payload or {}, timeout_seconds=180)
+
+
+@router.post("/test/generate/img2img")
+async def generate_img2img(payload: dict = None):
+    return await _run("generate_img2img", payload or {}, timeout_seconds=180)
+
+
+@router.post("/test/generate/inpaint")
+async def generate_inpaint(payload: dict):
+    return await _run("generate_inpaint", payload, timeout_seconds=180)
+
+
+@router.post("/test/cleanup-results")
+async def cleanup_results(payload: dict):
+    return await _run("cleanup_result_batch", payload)
 
 
 @router.post("/test/place/new-layer")

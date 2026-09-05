@@ -30,6 +30,35 @@ class ImageGenerationService:
         self.processed_requests_count = 0
         self.total_requests_count = 0
 
+    @staticmethod
+    def _request_id(batch_request):
+        request = getattr(batch_request, "request", None)
+        return getattr(request, "request_id", None)
+
+    def generation_state(self):
+        return {
+            "enqueued_request_id": self._request_id(self.enqueued_request),
+            "processing_request_id": self._request_id(self.processing_request),
+        }
+
+    def reset_harness_generation(self, request_prefix, timeout_seconds=10):
+        state = self.generation_state()
+        active_ids = [request_id for request_id in state.values() if request_id]
+        if any(not request_id.startswith(request_prefix) for request_id in active_ids):
+            raise bad_request("Generation is currently owned by a non-test request.")
+        if not active_ids:
+            return state
+
+        # Keep the normal cancellation/interrupt path as the owner of cleanup.
+        self.stop_image_generation()
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            state = self.generation_state()
+            if not state["enqueued_request_id"] and not state["processing_request_id"]:
+                return state
+            time.sleep(0.05)
+        raise bad_request("Harness generation did not return to idle state.")
+
     def check_progress(self) -> Automatic1111CheckProgressResponse:
         if self.enqueued_request is None:
             return Automatic1111CheckProgressResponse(

@@ -3,8 +3,18 @@ const {app} = photoshop;
 const {executeAsModal} = photoshop.core;
 const {batchPlay} = photoshop.action;
 const {photoshopApp} = require("../photoshop/PhotoshopApp");
+const {DreamTabInternal} = require("../components/tabs/DreamTab");
+const {
+  InferenceType,
+  MaskSource,
+  DEFAULT_CFG_SCALE,
+  DEFAULT_DENOISING_STRENGTH,
+  DEFAULT_DREAM_TAB_SETTINGS,
+} = require("../utils/Constants");
+const {localServerApi} = require("../api/localServerApi");
 const {setFailurePoint, clearFailurePoint} = require("./DevFailureInjector");
 
+const HARNESS_REQUEST_PREFIX = "test-phase1-";
 const ownedDocumentIds = new Set();
 
 const dimension = (value) => {
@@ -133,6 +143,117 @@ class PhotoshopDevHarness {
     return {result, state: await this.getState()};
   };
 
+  createTestMaskLayer = async () => {
+    const document = this.assertOwnedActiveDocument();
+    const sourceLayer = document.activeLayers[0];
+    await photoshopApp.applySelectionArea({x: 96, y: 96, width: 320, height: 320});
+    const maskLayerId = await photoshopApp.createLayer("Mask Layer Harness");
+    await photoshopApp.activateLayer(maskLayerId);
+    await executeAsModal(() => batchPlay([{
+      _obj: "fill",
+      using: {_enum: "fillContents", _value: "white"},
+      opacity: {_unit: "percentUnit", _value: 100},
+      mode: {_enum: "blendMode", _value: "normal"},
+    }], {modalBehavior: "execute"}));
+    await photoshopApp.activateLayer(sourceLayer._id);
+    return {documentId: document._id, sourceLayerId: sourceLayer._id, maskLayerId};
+  };
+
+  generate = async (payload) => {
+    const document = this.assertOwnedActiveDocument();
+    const inferenceType = payload.inference_type;
+    const maskSource = payload.mask_source || MaskSource.MASK_LAYER;
+    if (inferenceType === InferenceType.INPAINT &&
+        ![MaskSource.MASK_LAYER, MaskSource.CURRENT_SELECTION].includes(maskSource)) {
+      throw new Error(`Invalid inpaint mask source: ${String(maskSource)}`);
+    }
+    const sourceLayer = document.activeLayers[0];
+    let maskLayerId = null;
+    if (inferenceType === InferenceType.INPAINT && maskSource === MaskSource.MASK_LAYER) {
+      const mask = await this.createTestMaskLayer();
+      maskLayerId = mask.maskLayerId;
+    } else if (inferenceType === InferenceType.INPAINT && maskSource === MaskSource.CURRENT_SELECTION) {
+      await photoshopApp.applySelectionArea(payload.selection || {x: 96, y: 96, width: 320, height: 320});
+    }
+
+    const result = {groups: null, requestId: null};
+    let generationError = null;
+    const dreamTab = new DreamTabInternal({
+      sourceLayer: {_id: sourceLayer._id},
+      requestIdPrefix: HARNESS_REQUEST_PREFIX.slice(0, -1),
+      seed: -1,
+      cfgScale: DEFAULT_CFG_SCALE,
+      denoisingStrength: DEFAULT_DENOISING_STRENGTH,
+      onProgress: () => {},
+      onBeforeDreamButtonClicked: async () => {},
+      onSourceLayerChange: () => {},
+      onResults: (groups, requestId) => {
+        result.groups = groups;
+        result.requestId = requestId;
+      },
+      onGenerationError: (message) => {
+        generationError = message;
+      },
+      onIsLoadingModelsChange: () => {},
+      alertContext: {setError: () => {}},
+    });
+    dreamTab.state = {
+      ...dreamTab.state,
+      prompt: payload.prompt || "harness regression",
+      negativePrompt: "",
+      imageCount: 1,
+      samplingSteps: Number(payload.sampling_steps) || 5,
+      cfgScale: DEFAULT_CFG_SCALE,
+      seed: -1,
+      denoisingStrength: DEFAULT_DENOISING_STRENGTH,
+      inferenceType,
+      maskSource,
+      maskBlur: DEFAULT_DREAM_TAB_SETTINGS.maskBlur,
+      maskedContent: DEFAULT_DREAM_TAB_SETTINGS.maskedContent,
+      selectionInvert: Boolean(payload.selection_invert),
+      selectionFeather: payload.selection_feather === undefined
+        ? DEFAULT_DREAM_TAB_SETTINGS.selectionFeather
+        : Number(payload.selection_feather),
+      selectionExpand: payload.selection_expand === undefined
+        ? DEFAULT_DREAM_TAB_SETTINGS.selectionExpand
+        : Number(payload.selection_expand),
+    };
+    if (inferenceType === InferenceType.INPAINT) {
+      if (dreamTab.state.inferenceType !== InferenceType.INPAINT) {
+        throw new Error("Harness inpaint assertion failed: inferenceType is not INPAINT");
+      }
+      if (dreamTab.state.maskSource !== maskSource) {
+        throw new Error("Harness inpaint assertion failed: maskSource does not match the requested mode");
+      }
+    }
+    await dreamTab.onDreamButtonClick();
+    if (generationError) {
+      throw new Error(`Production ${inferenceType} workflow failed: ${generationError}`);
+    }
+    if (!result.groups || !result.requestId) {
+      throw new Error(`Production ${inferenceType} workflow did not return a result batch`);
+    }
+    const group = result.groups.find(item => item.request_id === result.requestId);
+    if (!group || !group.group_items || group.group_items.length === 0) {
+      throw new Error(`Production ${inferenceType} workflow returned no results for ${result.requestId}`);
+    }
+    return {
+      inferenceType,
+      requestId: result.requestId,
+      group,
+      maskLayerId,
+      state: await this.getState(),
+    };
+  };
+
+  cleanupResultBatch = async ({request_id: requestId} = {}) => {
+    if (!requestId || !requestId.startsWith("test-phase1-")) {
+      throw new Error("Refusing to delete a non-harness result batch");
+    }
+    await localServerApi.deleteResultBatch(requestId);
+    return {deleted: true, requestId};
+  };
+
   exportCurrentSelectionMask = async (payload = {}) => {
     this.assertOwnedActiveDocument();
     const result = await photoshopApp.exportSelectionAsMask({
@@ -177,7 +298,10 @@ class PhotoshopDevHarness {
       case "set_selection": return this.setSelection(payload);
       case "clear_selection": return this.clearSelection();
       case "export_current_selection_mask": return this.exportCurrentSelectionMask(payload);
-      case "export_current_selection_mask": return this.exportCurrentSelectionMask(payload);
+      case "generate_txt2img": return this.generate({...payload, inference_type: InferenceType.TXT_2_IMG});
+      case "generate_img2img": return this.generate({...payload, inference_type: InferenceType.IMG_2_IMG});
+      case "generate_inpaint": return this.generate({...payload, inference_type: InferenceType.INPAINT});
+      case "cleanup_result_batch": return this.cleanupResultBatch(payload);
       case "place_new_layer": return this.placeNewLayer(payload);
       case "place_replace_area": return this.placeReplaceArea(payload);
       case "place_open_image": return this.placeOpenImage(payload);

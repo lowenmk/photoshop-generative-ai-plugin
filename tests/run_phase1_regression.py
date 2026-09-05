@@ -11,6 +11,7 @@ BASE_URL = "http://127.0.0.1:8088/dev/photoshop"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_NAME = "easysd-harness-fixture.png"
 FIXTURE_PATH = REPO_ROOT / "dist" / "output" / FIXTURE_NAME
+HARNESS_REQUEST_PREFIX = "test-phase1-"
 
 
 def call(method, path, **kwargs):
@@ -200,6 +201,205 @@ def test_forced_cleanup_failure():
         close_document(document_id)
 
 
+def assert_a1111_reachable():
+    try:
+        response = requests.get("http://127.0.0.1:8088/sd/automatic1111/status", timeout=10)
+        response.raise_for_status()
+        if response.json().get("is_reachable") is not True:
+            raise AssertionError("A1111 is not reachable.")
+    except requests.RequestException as error:
+        raise AssertionError("A1111 is not reachable.") from error
+
+
+def generate(inference_type, payload=None):
+    endpoint = f"/test/generate/{inference_type}"
+    return call("POST", endpoint, json=payload or {})
+
+
+def reset_generation_if_needed():
+    state = call("GET", "/test/generation-state")
+    active_ids = [request_id for request_id in state.values() if request_id]
+    non_harness_ids = [request_id for request_id in active_ids if not request_id.startswith(HARNESS_REQUEST_PREFIX)]
+    assert not non_harness_ids, "A non-test generation is already active; wait for it to finish or cancel it manually."
+    if active_ids:
+        call("POST", "/test/reset-generation")
+    assert call("GET", "/test/generation-state") == {
+        "enqueued_request_id": None,
+        "processing_request_id": None,
+    }
+
+
+def first_result(generation):
+    group = generation["group"]
+    assert group["request_id"].startswith("test-phase1-")
+    assert group["group_items"], "generation returned no result items"
+    item = group["group_items"][0]
+    assert item["seed"] is not None
+    assert item["image_file_name"]
+    return item
+
+
+def cleanup_generation(generation):
+    try:
+        reset_generation_if_needed()
+        if generation and generation.get("requestId"):
+            call("POST", "/test/cleanup-results", json={"request_id": generation["requestId"]})
+    except Exception as error:
+        print(f"generation cleanup warning: {error}", file=sys.stderr)
+
+
+def print_test19_snapshot(label, state):
+    if not state:
+        print(f"[TEST19 SNAPSHOT] {label}: unavailable")
+        return
+    layers = [
+        {key: layer.get(key) for key in ("id", "name", "parentId", "type", "visible", "locked")}
+        for layer in state.get("layers", [])
+    ]
+    snapshot = {
+        'activeDocument': state.get('activeDocument'),
+        'documents': state.get('documents'),
+        'activeLayerId': state.get('activeLayerId'),
+        'layers': layers,
+        'selection': state.get('selection'),
+    }
+    print(f"[TEST19 SNAPSHOT] {label}: {snapshot}")
+
+
+def assert_condition(condition, message, expected=None, actual=None):
+    if not condition:
+        detail = f"{message}; expected={expected!r}, actual={actual!r}"
+        raise AssertionError(detail)
+
+
+def test_txt2img():
+    document_id = None
+    generation = None
+    try:
+        document_id = create_test_document("EasySD Harness TXT2IMG")
+        assert_locked_background(call("GET", "/state"))
+        generation = generate("txt2img", {"sampling_steps": 5})
+        item = first_result(generation)
+        placed = call("POST", "/test/place/new-layer", json={
+            "image_file_name": item["image_file_name"], "layer_name": "Harness TXT2IMG Result",
+        })
+        state = placed["state"]
+        result_layers = [layer for layer in state["layers"] if layer["name"] == "Harness TXT2IMG Result"]
+        assert len(result_layers) == 1 and result_layers[0]["parentId"] is None
+        assert_locked_background(state)
+    finally:
+        cleanup_generation(generation)
+        close_document(document_id)
+
+
+def test_img2img():
+    document_id = None
+    generation = None
+    try:
+        document_id = create_test_document("EasySD Harness IMG2IMG")
+        before = call("GET", "/state")
+        assert_locked_background(before)
+        generation = generate("img2img", {"sampling_steps": 5})
+        item = first_result(generation)
+        placed = call("POST", "/test/place/new-layer", json={
+            "image_file_name": item["image_file_name"], "layer_name": "Harness IMG2IMG Result",
+        })
+        state = placed["state"]
+        assert any(layer["name"] == "Harness IMG2IMG Result" for layer in state["layers"])
+        assert any(layer["id"] == before["activeLayerId"] for layer in state["layers"])
+        assert_locked_background(state)
+    finally:
+        cleanup_generation(generation)
+        close_document(document_id)
+
+
+def test_mask_layer_inpaint():
+    document_id = None
+    generation = None
+    try:
+        document_id = create_test_document("EasySD Harness Mask Inpaint")
+        generation = generate("inpaint", {
+            "mask_source": "maskLayer", "sampling_steps": 5,
+        })
+        item = first_result(generation)
+        placed = call("POST", "/test/place/new-layer", json={
+            "image_file_name": item["image_file_name"], "layer_name": "Harness Mask Inpaint Result",
+        })
+        state = placed["state"]
+        assert any(layer["name"] == "Mask Layer Harness" and layer["visible"] for layer in state["layers"])
+        assert any(layer["name"] == "Harness Mask Inpaint Result" for layer in state["layers"])
+        assert_locked_background(state)
+    finally:
+        cleanup_generation(generation)
+        close_document(document_id)
+
+
+def test_current_selection_inpaint():
+    document_id = None
+    generation = None
+    before_state = None
+    after_generation_state = None
+    after_placement_state = None
+    try:
+        document_id = create_test_document("EasySD Harness Selection Inpaint")
+        before_state = call("GET", "/state")
+        print_test19_snapshot("before selection", before_state)
+        original = call("POST", "/test/selection", json={"left": 96, "top": 96, "right": 416, "bottom": 416})
+        assert_condition(original == {"exists": True, "left": 96, "top": 96, "right": 416, "bottom": 416},
+                         "Original selection exists with expected bounds", {
+                             "exists": True, "left": 96, "top": 96, "right": 416, "bottom": 416,
+                         }, original)
+        print_test19_snapshot("after selection", call("GET", "/state"))
+        generation = generate("inpaint", {
+            "mask_source": "currentSelection", "selection": {"x": 96, "y": 96, "width": 320, "height": 320},
+            "selection_invert": False, "selection_feather": 0, "selection_expand": 0,
+            "sampling_steps": 5,
+        })
+        after_generation_state = generation["state"]
+        print_test19_snapshot("after generation", after_generation_state)
+        item = first_result(generation)
+        placed = call("POST", "/test/place/replace-area", json={
+            "image_file_name": item["image_file_name"], "layer_name": "Harness Selection Inpaint Result",
+            "request_id": generation["requestId"], "prompt": "Harness selection inpaint",
+        })
+        after_placement_state = placed["state"]
+        print_test19_snapshot("after Replace Selected Area", after_placement_state)
+        state = after_placement_state
+        expected_group_fragment = generation["requestId"][:8]
+        groups = [layer for layer in state["layers"]
+                  if layer["type"] == "group" and expected_group_fragment in layer["name"]]
+        result_layers = [layer for layer in state["layers"] if layer["name"] == "Harness Selection Inpaint Result"]
+        source_layers = [layer for layer in state["layers"] if layer["name"] == "Background"]
+        assert_condition(bool(generation.get("requestId")), "Generation result exists for harness request ID",
+                         True, generation.get("requestId"))
+        assert_condition(len(groups) == 1, "Replace Selected Area created/reused expected EasySD group", 1, groups)
+        assert_condition(len(result_layers) == 1, "Generated result layer exists", 1, result_layers)
+        assert_condition(result_layers[0]["parentId"] == groups[0]["id"],
+                         "Generated result layer is inside expected group", groups[0]["id"], result_layers[0]["parentId"])
+        assert_condition(bool(source_layers), "Source/background layer still exists", True, source_layers)
+        assert_condition(source_layers[0]["locked"] is True, "Background remains locked", True, source_layers[0]["locked"])
+        assert_condition(state["selection"] == original, "Original selection is restored exactly", original, state["selection"])
+        assert_condition(not any(layer["name"] == "EasySD Temporary Selection Mask" for layer in state["layers"]),
+                         "No orphan temporary mask layer remains", False,
+                         [layer for layer in state["layers"] if layer["name"] == "EasySD Temporary Selection Mask"])
+        assert_condition(not any(layer["name"].startswith("EasySD Selection Backup") for layer in state["layers"]),
+                         "No orphan temporary source/duplicate layer remains", False,
+                         [layer for layer in state["layers"] if layer["name"].startswith("EasySD Selection Backup")])
+        before_document_ids = {document["id"] for document in before_state["documents"]}
+        after_document_ids = {document["id"] for document in state["documents"]}
+        assert_condition(after_document_ids == before_document_ids, "No unexpected temporary Photoshop document remains open",
+                         before_document_ids, after_document_ids)
+        assert_condition(document_id in after_document_ids, "Harness source document remains until explicit cleanup",
+                         True, document_id in after_document_ids)
+    finally:
+        cleanup_generation(generation)
+        close_document(document_id)
+        try:
+            print_test19_snapshot("after cleanup/finally", call("GET", "/state"))
+        except Exception as error:
+            print(f"[TEST19 SNAPSHOT] after cleanup/finally unavailable: {error}")
+
+
 def run(label, function):
     try:
         function()
@@ -212,6 +412,9 @@ def run(label, function):
 
 def main():
     make_fixture()
+    generation_available = run("00 A1111 precheck", assert_a1111_reachable)
+    if generation_available:
+        generation_available = run("00b Generation state precheck", reset_generation_if_needed)
     tests = [
         ("01 Health", test_health),
         ("02 State inspection", test_state),
@@ -221,8 +424,12 @@ def main():
         ("13 Replace group reuse", test_replace_group_reuse),
         ("14 Open as Image", test_open_as_image),
         ("15 Forced failure cleanup", test_forced_cleanup_failure),
+        ("16 TXT2IMG", test_txt2img),
+        ("17 IMG2IMG", test_img2img),
+        ("18 Mask Layer Inpaint", test_mask_layer_inpaint),
+        ("19 Current Selection Inpaint", test_current_selection_inpaint),
     ]
-    passed = all(run(label, function) for label, function in tests)
+    passed = generation_available and all(run(label, function) for label, function in tests)
     print("PHASE 1 PHOTOSHOP REGRESSION: " + ("PASS" if passed else "FAIL"))
     return 0 if passed else 1
 
