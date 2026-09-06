@@ -1,6 +1,7 @@
 """Run the development-only Photoshop Phase 1 regression suite."""
 
 import sys
+from unittest.mock import Mock, patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "local_server"))
@@ -596,7 +597,9 @@ def test_controlnet_refresh_race():
 
 
 def test_controlnet_unavailable_fallback():
-    status = Automatic1111Client().get_controlnet_status()
+    unavailable_response = Mock(status_code=404)
+    with patch("automatic1111.client.requests.get", return_value=unavailable_response):
+        status = Automatic1111Client().get_controlnet_status()
     assert status["available"] is False
     assert status["models"] == [] and status["modules"] == []
 
