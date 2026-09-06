@@ -130,6 +130,11 @@ async def cleanup_results(payload: dict):
     return await _run("cleanup_result_batch", payload)
 
 
+@router.post("/test/model-settings")
+async def model_settings():
+    return await _run("model_settings_round_trip", {}, timeout_seconds=180)
+
+
 @router.post("/test/place/new-layer")
 async def place_new_layer(payload: dict):
     return await _run("place_new_layer", payload)

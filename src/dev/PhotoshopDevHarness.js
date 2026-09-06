@@ -12,6 +12,8 @@ const {
   DEFAULT_DREAM_TAB_SETTINGS,
 } = require("../utils/Constants");
 const {localServerApi} = require("../api/localServerApi");
+const {settingsStorage} = require("../utils/SettingsStorage");
+const {getActiveMainPanelInstance} = require("../panels/MainPanel");
 const {setFailurePoint, clearFailurePoint} = require("./DevFailureInjector");
 
 const HARNESS_REQUEST_PREFIX = "test-phase1-";
@@ -254,6 +256,75 @@ class PhotoshopDevHarness {
     return {deleted: true, requestId};
   };
 
+  modelSettingsRoundTrip = async () => {
+    const panel = getActiveMainPanelInstance();
+    if (!panel) throw new Error("MainPanel is not ready for model settings testing");
+    const models = await localServerApi.refreshAvailableModels();
+    const usableModels = models.filter(model => typeof model.modelHash === "string" && model.modelHash.length > 0);
+    const modelA = usableModels.find(model => model.isModelActive);
+    const modelB = usableModels.find(model => model.modelHash !== modelA?.modelHash);
+    if (usableModels.length < 2) return {skipped: true, reason: "Fewer than two hashed checkpoints are installed"};
+    if (!modelA || !modelB) return {skipped: true, reason: "Could not determine the active hashed checkpoint"};
+
+    const samplers = await localServerApi.getSamplers();
+    if (samplers.length < 2) return {skipped: true, reason: "Fewer than two samplers are available"};
+    const originalHash = modelA.modelHash;
+    const originalSettings = panel.getCurrentModelSettings();
+    const originalProfiles = {
+      [modelA.modelHash]: settingsStorage.hasModelSettings(modelA.modelHash)
+        ? settingsStorage.getModelSettings(modelA.modelHash) : null,
+      [modelB.modelHash]: settingsStorage.hasModelSettings(modelB.modelHash)
+        ? settingsStorage.getModelSettings(modelB.modelHash) : null,
+    };
+    const settingsA = {
+      samplingMethod: samplers[0].samplerName, samplingSteps: 21, cfgScale: 5,
+      denoisingStrength: 0.42, seed: 12345, restoreFaces: false, maskBlur: 8, maskedContent: "original",
+    };
+    const settingsB = {
+      samplingMethod: samplers[1].samplerName, samplingSteps: 37, cfgScale: 9,
+      denoisingStrength: 0.81, seed: 67890, restoreFaces: true, maskBlur: 24, maskedContent: "latent noise",
+    };
+    const waitForState = () => new Promise(resolve => setTimeout(resolve, 100));
+    const sameSettings = (left, right) => Object.keys(settingsA).every(key => left[key] === right[key]);
+    try {
+      if (panel.state.activeModelHash !== modelA.modelHash) {
+        await panel.onModelChangeRequested(modelA.modelHash);
+      }
+      panel.applyModelSettings(settingsA);
+      await waitForState();
+      await panel.onModelChangeRequested(modelB.modelHash);
+      panel.applyModelSettings(settingsB);
+      await waitForState();
+      await panel.onModelChangeRequested(modelA.modelHash);
+      await waitForState();
+      const restoredA = panel.getCurrentModelSettings();
+      if (!sameSettings(restoredA, settingsA)) throw new Error("Model A settings were not restored");
+      await panel.onModelChangeRequested(modelB.modelHash);
+      await waitForState();
+      const restoredB = panel.getCurrentModelSettings();
+      if (!sameSettings(restoredB, settingsB)) throw new Error("Model B settings were not restored");
+      const refreshedModels = await localServerApi.refreshAvailableModels();
+      const refreshedActive = refreshedModels.find(model => model.isModelActive)?.modelHash;
+      if (refreshedActive !== modelB.modelHash) throw new Error("Model refresh changed the active model unexpectedly");
+      const reloadSettings = settingsStorage.getModelSettings(modelB.modelHash);
+      if (!sameSettings(reloadSettings, settingsB)) throw new Error("Model settings did not survive reload read");
+      return {skipped: false, modelA: modelA.modelHash, modelB: modelB.modelHash,
+        restoredA: true, restoredB: true, refreshPreservedActiveModel: true, reloadPreservedSettings: true};
+    } finally {
+      try {
+        if (panel.state.activeModelHash !== originalHash) await panel.onModelChangeRequested(originalHash);
+        panel.applyModelSettings(originalSettings);
+        await waitForState();
+      } finally {
+        for (const model of [modelA, modelB]) {
+          const profile = originalProfiles[model.modelHash];
+          if (profile) settingsStorage.saveModelSettings(model.modelHash, profile);
+          else settingsStorage.removeModelSettings(model.modelHash);
+        }
+      }
+    }
+  };
+
   exportCurrentSelectionMask = async (payload = {}) => {
     this.assertOwnedActiveDocument();
     const result = await photoshopApp.exportSelectionAsMask({
@@ -302,6 +373,7 @@ class PhotoshopDevHarness {
       case "generate_img2img": return this.generate({...payload, inference_type: InferenceType.IMG_2_IMG});
       case "generate_inpaint": return this.generate({...payload, inference_type: InferenceType.INPAINT});
       case "cleanup_result_batch": return this.cleanupResultBatch(payload);
+      case "model_settings_round_trip": return this.modelSettingsRoundTrip();
       case "place_new_layer": return this.placeNewLayer(payload);
       case "place_replace_area": return this.placeReplaceArea(payload);
       case "place_open_image": return this.placeOpenImage(payload);

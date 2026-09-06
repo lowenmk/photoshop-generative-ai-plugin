@@ -12,10 +12,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_NAME = "easysd-harness-fixture.png"
 FIXTURE_PATH = REPO_ROOT / "dist" / "output" / FIXTURE_NAME
 HARNESS_REQUEST_PREFIX = "test-phase1-"
+model_settings_result = None
 
 
-def call(method, path, **kwargs):
-    response = requests.request(method, BASE_URL + path, timeout=20, **kwargs)
+class SkipRegressionTest(Exception):
+    pass
+
+
+def call(method, path, request_timeout=20, **kwargs):
+    response = requests.request(method, BASE_URL + path, timeout=request_timeout, **kwargs)
     if response.status_code >= 400:
         try:
             detail = response.json()
@@ -400,10 +405,34 @@ def test_current_selection_inpaint():
             print(f"[TEST19 SNAPSHOT] after cleanup/finally unavailable: {error}")
 
 
+def test_model_settings_round_trip():
+    global model_settings_result
+    model_settings_result = call("POST", "/test/model-settings", request_timeout=180)
+    if model_settings_result.get("skipped"):
+        raise SkipRegressionTest(model_settings_result["reason"])
+    assert model_settings_result["restoredA"] is True
+    assert model_settings_result["restoredB"] is True
+
+
+def test_model_settings_reload():
+    if not model_settings_result or model_settings_result.get("skipped"):
+        raise SkipRegressionTest("Per-model settings test was skipped")
+    assert model_settings_result["reloadPreservedSettings"] is True
+
+
+def test_model_settings_refresh():
+    if not model_settings_result or model_settings_result.get("skipped"):
+        raise SkipRegressionTest("Per-model settings test was skipped")
+    assert model_settings_result["refreshPreservedActiveModel"] is True
+
+
 def run(label, function):
     try:
         function()
         print(f"[PASS] {label}")
+        return True
+    except SkipRegressionTest as error:
+        print(f"[SKIP] {label}: {error}")
         return True
     except Exception as error:
         print(f"[FAIL] {label}: {error}")
@@ -428,6 +457,9 @@ def main():
         ("17 IMG2IMG", test_img2img),
         ("18 Mask Layer Inpaint", test_mask_layer_inpaint),
         ("19 Current Selection Inpaint", test_current_selection_inpaint),
+        ("20 Per-model settings save/restore", test_model_settings_round_trip),
+        ("21 Per-model settings reload", test_model_settings_reload),
+        ("22 Model refresh preserves settings", test_model_settings_refresh),
     ]
     passed = generation_available and all(run(label, function) for label, function in tests)
     print("PHASE 1 PHOTOSHOP REGRESSION: " + ("PASS" if passed else "FAIL"))

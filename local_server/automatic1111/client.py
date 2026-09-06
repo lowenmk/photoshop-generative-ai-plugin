@@ -131,6 +131,26 @@ class Automatic1111Client:
                 print(f"Could not determine current model hash")
                 traceback.print_exc()
 
+            if not current_model_hash:
+                try:
+                    options_response = requests.get(
+                        f"{self._get_base_automatic1111_url()}{OPTIONS_PATH}"
+                    ).json()
+                    options_model = options_response.get("sd_model_checkpoint")
+                    options_hash_match = re.search(
+                        GRADIO_UI_MODEL_NAME_WITH_HASH_REGEX,
+                        options_model or "",
+                    )
+                    current_model_hash = (
+                        options_hash_match.group(1)
+                        if options_hash_match is not None
+                        else options_model
+                    )
+                    print(f"Current model hash from options: {current_model_hash}")
+                except Exception:
+                    print("Could not determine current model hash from options")
+                    traceback.print_exc()
+
             if current_model_hash:
                 current_model = next((model for model in models if model.hash == current_model_hash), None)
                 if current_model is not None:

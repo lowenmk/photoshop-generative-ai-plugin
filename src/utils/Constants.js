@@ -52,6 +52,17 @@ export const DEFAULT_DREAM_TAB_SETTINGS = {
   ...DEFAULT_UI_SETTINGS,
 }
 
+export const DEFAULT_MODEL_SETTINGS = {
+  samplingMethod: DEFAULT_DREAM_TAB_SETTINGS.samplingMethod,
+  samplingSteps: DEFAULT_DREAM_TAB_SETTINGS.samplingSteps,
+  cfgScale: DEFAULT_CFG_SCALE,
+  denoisingStrength: DEFAULT_DENOISING_STRENGTH,
+  seed: DEFAULT_MAIN_PANEL_SETTINGS.seed,
+  restoreFaces: DEFAULT_DREAM_TAB_SETTINGS.restoreFaces,
+  maskBlur: DEFAULT_DREAM_TAB_SETTINGS.maskBlur,
+  maskedContent: DEFAULT_DREAM_TAB_SETTINGS.maskedContent,
+}
+
 export const BACKEND_SETTING_NAMES = {
   AUTOMATIC1111_URL: "automatic1111_url",
   OUTPUT_FOLDER: "output_folder",

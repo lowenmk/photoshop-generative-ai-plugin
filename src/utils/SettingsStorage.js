@@ -1,10 +1,11 @@
 import React from "react";
-import {DEFAULT_DREAM_TAB_SETTINGS, DEFAULT_MAIN_PANEL_SETTINGS} from "./Constants";
+import {DEFAULT_DREAM_TAB_SETTINGS, DEFAULT_MAIN_PANEL_SETTINGS, DEFAULT_MODEL_SETTINGS} from "./Constants";
 
 const MAIN_PANEL_SETTINGS_KEY = "MAIN_PANEL_SETTINGS"
 const DREAM_TAB_SETTINGS_KEY = "DREAM_TAB_SETTINGS"
 const RESULTS_TAB_SETTINGS_KEY = "RESULTS_TAB_SETTINGS"
 const PROMPTS_TAB_SETTINGS_KEY = "PROMPTS_TAB_SETTINGS"
+const MODEL_SETTINGS_KEY = "MODEL_SETTINGS"
 
 // To frequent seems redundant, too infrequent is bad for UX as latest changes won't be remembered
 const DREAM_SETTINGS_WRITE_FREQUENCY_MS = 3000;
@@ -146,6 +147,73 @@ class SettingsStorage {
     }
     console.log('Saving main panel settings', JSON.stringify(updatedSettings, null, 2))
     localStorage.setItem(MAIN_PANEL_SETTINGS_KEY, JSON.stringify(updatedSettings));
+  }
+
+  getModelSettings(modelHash) {
+    if (!modelHash) return {...DEFAULT_MODEL_SETTINGS};
+    const storedSettings = localStorage.getItem(MODEL_SETTINGS_KEY);
+    if (!storedSettings) return {...DEFAULT_MODEL_SETTINGS};
+    try {
+      const allModelSettings = JSON.parse(storedSettings);
+      const profile = allModelSettings && typeof allModelSettings === "object"
+        ? allModelSettings[modelHash]
+        : null;
+      return {
+        ...DEFAULT_MODEL_SETTINGS,
+        ...(profile && typeof profile === "object" ? profile : {}),
+      };
+    } catch (e) {
+      console.error("Failed to parse model settings", storedSettings);
+      return {...DEFAULT_MODEL_SETTINGS};
+    }
+  }
+
+  hasModelSettings(modelHash) {
+    if (!modelHash) return false;
+    const storedSettings = localStorage.getItem(MODEL_SETTINGS_KEY);
+    if (!storedSettings) return false;
+    try {
+      const allModelSettings = JSON.parse(storedSettings);
+      return Boolean(allModelSettings && typeof allModelSettings === "object" && allModelSettings[modelHash]);
+    } catch (e) {
+      console.error("Failed to parse model settings", storedSettings);
+      return false;
+    }
+  }
+
+  saveModelSettings(modelHash, settings) {
+    if (!modelHash) return;
+    const storedSettings = localStorage.getItem(MODEL_SETTINGS_KEY);
+    let allModelSettings = {};
+    if (storedSettings) {
+      try {
+        const parsed = JSON.parse(storedSettings);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          allModelSettings = parsed;
+        }
+      } catch (e) {
+        console.error("Failed to parse model settings before save", storedSettings);
+      }
+    }
+    allModelSettings[modelHash] = {
+      ...DEFAULT_MODEL_SETTINGS,
+      ...settings,
+    };
+    localStorage.setItem(MODEL_SETTINGS_KEY, JSON.stringify(allModelSettings));
+  }
+
+  removeModelSettings(modelHash) {
+    if (!modelHash) return;
+    const storedSettings = localStorage.getItem(MODEL_SETTINGS_KEY);
+    if (!storedSettings) return;
+    try {
+      const allModelSettings = JSON.parse(storedSettings);
+      if (!allModelSettings || typeof allModelSettings !== "object") return;
+      delete allModelSettings[modelHash];
+      localStorage.setItem(MODEL_SETTINGS_KEY, JSON.stringify(allModelSettings));
+    } catch (e) {
+      console.error("Failed to parse model settings before removal", storedSettings);
+    }
   }
 }
 

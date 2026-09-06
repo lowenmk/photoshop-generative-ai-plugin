@@ -42,6 +42,12 @@ export const AdvancedOptions = ({
     loadSamplers();
   }, [])
 
+  useEffect(() => {
+    if (samplers.length > 0 && !samplers.some(sampler => sampler.samplerName === samplingMethod)) {
+      onSamplingMethodChange(samplers[0].samplerName)
+    }
+  }, [samplers, samplingMethod])
+
 
   return (
     <>

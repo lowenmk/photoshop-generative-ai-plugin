@@ -16,14 +16,17 @@ const {DreamTab} = require("../components/tabs/DreamTab");
 const {AlertContext} = require("../contexts/AlertContext");
 const {MainAlert} = require("../components/alerts/MainAlert");
 const {ModalContext} = require("../contexts/ModalContext");
+const {DEFAULT_MODEL_SETTINGS} = require("../utils/Constants");
 
 
 const STORED_PROMPTS_WRITE_FREQUENCY_MS = 5000
+let activeMainPanelInstance = null;
 
-class MainPanelInternal extends React.Component {
+export class MainPanelInternal extends React.Component {
 
   constructor(props) {
     super(props);
+    activeMainPanelInstance = this;
 
     const mainPanelSettings = settingsStorage.getMainPanelSettings();
     this.state = {
@@ -38,6 +41,9 @@ class MainPanelInternal extends React.Component {
       lastRequestId: null,
       sourceLayer: null,
       isLoadingModels: false,
+      activeModelHash: null,
+      dreamModelSettings: {...DEFAULT_MODEL_SETTINGS},
+      modelSettingsToApply: null,
       ...mainPanelSettings,
     }
     this.writeStoredPromptsToBackendInterval = null;
@@ -96,6 +102,9 @@ class MainPanelInternal extends React.Component {
   }
 
   componentWillUnmount() {
+    if (activeMainPanelInstance === this) {
+      activeMainPanelInstance = null;
+    }
     if (this.writeStoredPromptsToBackendInterval) {
       // Make sure to write the recent changes if the interval was set
       // Doing this only when interval exists ensures we don't try to write empty array to backend
@@ -207,18 +216,72 @@ class MainPanelInternal extends React.Component {
     this.setState({ isLoadingModels });
   }
 
+  getCurrentModelSettings = () => ({
+    ...this.state.dreamModelSettings,
+    seed: this.state.seed,
+    cfgScale: this.state.cfgScale,
+    denoisingStrength: this.state.denoisingStrength,
+  });
+
+  applyModelSettings = (settings) => {
+    this.setState({
+      seed: settings.seed,
+      cfgScale: settings.cfgScale,
+      denoisingStrength: settings.denoisingStrength,
+      dreamModelSettings: {...settings},
+      modelSettingsToApply: {...settings},
+    });
+  };
+
+  onDreamModelSettingsChange = (settings) => {
+    this.setState({
+      dreamModelSettings: {
+        ...this.state.dreamModelSettings,
+        ...settings,
+      },
+    });
+  };
+
+  loadModelSettings = (modelHash, fallbackSettings = this.getCurrentModelSettings()) => {
+    const hasSavedSettings = settingsStorage.hasModelSettings(modelHash);
+    const settings = hasSavedSettings
+      ? settingsStorage.getModelSettings(modelHash)
+      : fallbackSettings;
+    if (!hasSavedSettings) {
+      settingsStorage.saveModelSettings(modelHash, settings);
+    }
+    this.applyModelSettings(settings);
+  };
+
+  onActiveModelDiscovered = (modelHash) => {
+    if (!modelHash || modelHash === this.state.activeModelHash) return;
+    this.loadModelSettings(modelHash);
+    this.setState({activeModelHash: modelHash});
+  };
+
+  onModelChangeRequested = async (newModelHash) => {
+    const oldModelHash = this.state.activeModelHash;
+    const currentSettings = this.getCurrentModelSettings();
+    if (oldModelHash && oldModelHash !== newModelHash) {
+      settingsStorage.saveModelSettings(oldModelHash, currentSettings);
+    }
+    await localServerApi.changeCurrentModel(newModelHash);
+    this.loadModelSettings(newModelHash, currentSettings);
+    this.setState({activeModelHash: newModelHash});
+  };
+
   onSeedChange = (seed) => {
-    this.setState({ seed });
+    this.setState({ seed, dreamModelSettings: {...this.state.dreamModelSettings, seed} });
     settingsStorage.updateMainPanelSettingsSync({ seed })
   }
 
   onCfgScaleChange = (cfgScale) => {
-    this.setState({ cfgScale });
+    this.setState({ cfgScale, dreamModelSettings: {...this.state.dreamModelSettings, cfgScale} });
     settingsStorage.updateMainPanelSettingsSync({ cfgScale })
   }
 
   onDenoisingStrengthChange = (denoisingStrength) => {
-    this.setState({ denoisingStrength });
+    this.setState({ denoisingStrength, dreamModelSettings: {...this.state.dreamModelSettings, denoisingStrength} });
     settingsStorage.updateMainPanelSettingsSync({ denoisingStrength })
   }
 
@@ -239,6 +302,7 @@ class MainPanelInternal extends React.Component {
       seed,
       cfgScale,
       denoisingStrength,
+      modelSettingsToApply,
     } = this.state;
     return (
       <div className="container flexColumn">
@@ -270,6 +334,10 @@ class MainPanelInternal extends React.Component {
                 onIsLoadingModelsChange={this.onIsLoadingModelsChange}
                 storedPrompts={storedPrompts}
                 onStoredPromptsChange={this.onStoredPromptsChange}
+                modelSettings={modelSettingsToApply}
+                onModelSettingsChange={this.onDreamModelSettingsChange}
+                onActiveModelDiscovered={this.onActiveModelDiscovered}
+                onModelChangeRequested={this.onModelChangeRequested}
               />
             ) : null}
             {currentTab === MainTab.RESULTS ? (
@@ -296,6 +364,8 @@ class MainPanelInternal extends React.Component {
     );
   }
 }
+
+export const getActiveMainPanelInstance = () => activeMainPanelInstance;
 
 export const MainPanel = () => {
   const modalContext = useContext(ModalContext);

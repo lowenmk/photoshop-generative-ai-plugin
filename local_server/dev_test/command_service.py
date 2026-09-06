@@ -15,6 +15,7 @@ ALLOWED_COMMAND_TYPES = {
     "generate_img2img",
     "generate_inpaint",
     "cleanup_result_batch",
+    "model_settings_round_trip",
     "place_new_layer",
     "place_replace_area",
     "place_open_image",

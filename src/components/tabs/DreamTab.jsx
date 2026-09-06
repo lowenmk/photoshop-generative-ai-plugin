@@ -90,8 +90,32 @@ export class DreamTabInternal extends React.Component {
     this.state = savedOrDefaultSettings;
   }
 
+  componentDidMount() {
+    this.notifyModelSettingsChange();
+  }
+
   componentDidUpdate(prevProps, prevState, snapshot) {
     settingsStorage.saveDreamSettingsBatched(this.state);
+    if (this.props.modelSettings && this.props.modelSettings !== prevProps.modelSettings) {
+      this.setState({
+        samplingMethod: this.props.modelSettings.samplingMethod,
+        samplingSteps: this.props.modelSettings.samplingSteps,
+        restoreFaces: this.props.modelSettings.restoreFaces,
+        maskBlur: this.props.modelSettings.maskBlur,
+        maskedContent: this.props.modelSettings.maskedContent,
+      });
+    }
+  }
+
+  notifyModelSettingsChange = () => {
+    if (!this.props.onModelSettingsChange) return;
+    this.props.onModelSettingsChange({
+      samplingMethod: this.state.samplingMethod,
+      samplingSteps: this.state.samplingSteps,
+      restoreFaces: this.state.restoreFaces,
+      maskBlur: this.state.maskBlur,
+      maskedContent: this.state.maskedContent,
+    });
   }
 
   onCancelButtonClick = async () => {
@@ -377,19 +401,19 @@ export class DreamTabInternal extends React.Component {
   }
 
   onSamplingMethodChange = (samplingMethod) => {
-    this.setState({ samplingMethod });
+    this.setState({ samplingMethod }, this.notifyModelSettingsChange);
   }
 
   onSamplingStepsChange = (samplingSteps) => {
-    this.setState({ samplingSteps });
+    this.setState({ samplingSteps }, this.notifyModelSettingsChange);
   }
 
   onMaskBlurChange = (maskBlur) => {
-    this.setState({ maskBlur });
+    this.setState({ maskBlur }, this.notifyModelSettingsChange);
   }
 
   onMaskedContentChange = (maskedContent) => {
-    this.setState({ maskedContent });
+    this.setState({ maskedContent }, this.notifyModelSettingsChange);
   }
 
   onMaskSourceChange = (maskSource) => this.setState({maskSource});
@@ -398,7 +422,7 @@ export class DreamTabInternal extends React.Component {
   onSelectionExpandChange = (selectionExpand) => this.setState({selectionExpand});
 
   onRestoreFacesChange = (restoreFaces) => {
-    this.setState({ restoreFaces });
+    this.setState({ restoreFaces }, this.notifyModelSettingsChange);
   }
 
   onIsAdvancedOptionsExpandedChange = (isAdvancedOptionsExpanded) => {
@@ -450,6 +474,10 @@ export class DreamTabInternal extends React.Component {
       onCfgScaleChange,
       denoisingStrength,
       onDenoisingStrengthChange,
+      modelSettings,
+      onModelSettingsChange,
+      onActiveModelDiscovered,
+      onModelChangeRequested,
       storedPrompts,
       onStoredPromptsChange,
       progress,
@@ -488,6 +516,8 @@ export class DreamTabInternal extends React.Component {
             disabled={isModelDropdownDisabled}
             isLoadingModels={isLoadingModels}
             onIsLoadingModelsChange={onIsLoadingModelsChange}
+            onActiveModelDiscovered={onActiveModelDiscovered}
+            onModelChangeRequested={onModelChangeRequested}
           />
           </div>
 
@@ -578,7 +608,7 @@ export class DreamTabInternal extends React.Component {
               </div>
             ) : null}
 
-          <AdvancedOptions
+                <AdvancedOptions
             inferenceType={inferenceType}
             samplingMethod={samplingMethod}
             onSamplingMethodChange={this.onSamplingMethodChange}

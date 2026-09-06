@@ -5,7 +5,13 @@ const {RefreshIcon} = require("../../common/Icons.jsx");
 const {localServerApi} = require("../../../api/localServerApi");
 const {trueOrUndefined} = require("../../../utils/utils");
 
-export const ModelsDropdown = ({ disabled, isLoadingModels, onIsLoadingModelsChange }) => {
+export const ModelsDropdown = ({
+  disabled,
+  isLoadingModels,
+  onIsLoadingModelsChange,
+  onActiveModelDiscovered,
+  onModelChangeRequested,
+}) => {
   const [modelPlaceholder, setModelPlaceholder] = useState("")
   const [models, setModels] = useState([])
   const alertContext = useContext(AlertContext);
@@ -16,6 +22,8 @@ export const ModelsDropdown = ({ disabled, isLoadingModels, onIsLoadingModelsCha
       onIsLoadingModelsChange(true);
       const models = await localServerApi.getAvailableModels()
       setModels(models)
+      const activeModel = models.find(model => model.isModelActive)
+      onActiveModelDiscovered?.(activeModel?.modelHash || null)
     } catch (e) {
       alertContext.setError(<>{e.message}</>)
     } finally {
@@ -28,6 +36,8 @@ export const ModelsDropdown = ({ disabled, isLoadingModels, onIsLoadingModelsCha
       onIsLoadingModelsChange(true);
       const models = await localServerApi.refreshAvailableModels()
       setModels(models)
+      const activeModel = models.find(model => model.isModelActive)
+      onActiveModelDiscovered?.(activeModel?.modelHash || null)
     } catch (e) {
       alertContext.setError(<>{e.message}</>)
     } finally {
@@ -54,7 +64,7 @@ export const ModelsDropdown = ({ disabled, isLoadingModels, onIsLoadingModelsCha
       setModelPlaceholder("Loading the model...")
 
       onIsLoadingModelsChange(true);
-      await localServerApi.changeCurrentModel(modelHash)
+      await onModelChangeRequested(modelHash)
       setModels(models)
       selectModel(modelHash)
     } catch (e) {
