@@ -110,9 +110,18 @@ class PhotoshopDevHarness {
       }
     });
     ownedDocumentIds.add(document._id);
+    let fixtureLayerId = null;
     if (payload.controlnet_fixture) {
       // Use the normal Photoshop selection/fill path to create visible edge structure
       // for the dev-only ControlNet generation probe.
+      fixtureLayerId = await photoshopApp.createLayer("ControlNet Fixture");
+      await photoshopApp.activateLayer(fixtureLayerId);
+      await executeAsModal(() => batchPlay([{
+        _obj: "fill",
+        using: {_enum: "fillContents", _value: "white"},
+        opacity: {_unit: "percentUnit", _value: 100},
+        mode: {_enum: "blendMode", _value: "normal"},
+      }], {modalBehavior: "execute"}));
       await photoshopApp.applySelectionArea({x: 96, y: 96, width: 320, height: 320});
       await executeAsModal(() => batchPlay([{
         _obj: "fill",
@@ -125,7 +134,12 @@ class PhotoshopDevHarness {
         to: {_enum: "ordinal", _value: "none"},
       }], {modalBehavior: "execute"}));
     }
-    return {document: serializeDocument(document), harnessOwned: true, backgroundId: background?._id ?? null};
+    return {
+      document: serializeDocument(document),
+      harnessOwned: true,
+      backgroundId: background?._id ?? null,
+      fixtureLayerId,
+    };
   };
 
   closeTestDocument = async ({document_id: documentId} = {}) => {
