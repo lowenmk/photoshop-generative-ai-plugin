@@ -17,6 +17,8 @@ SD_MODELS_PATH = "/sdapi/v1/sd-models"
 REFRESH_CHECKPOINTS_PATH = "/sdapi/v1/refresh-checkpoints"
 OPTIONS_PATH = "/sdapi/v1/options"
 SAMPLERS_PATH = "/sdapi/v1/samplers"
+LORAS_PATH = "/sdapi/v1/loras"
+REFRESH_LORAS_PATH = "/sdapi/v1/refresh-loras"
 INTERRUPT_PATH = "/sdapi/v1/interrupt"
 
 
@@ -72,6 +74,9 @@ class Automatic1111ClientGenerateImageResponse(BaseModel):
     sd_model_hash: str
     sampler_name: str
     steps: int
+    model_name: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
 
 
 class Automatic1111ClientCheckProgressResponse(BaseModel):
@@ -230,6 +235,22 @@ class Automatic1111Client:
         except requests.exceptions.ConnectionError:
             raise self._bad_connection_error()
 
+    def get_loras(self):
+        try:
+            response = requests.get(f"{self._get_base_automatic1111_url()}{LORAS_PATH}").json()
+            return [{"name": item.get("name", ""), "alias": item.get("alias")} for item in response]
+        except requests.exceptions.ConnectionError:
+            raise self._bad_connection_error()
+
+    def refresh_loras(self):
+        try:
+            response = requests.post(f"{self._get_base_automatic1111_url()}{REFRESH_LORAS_PATH}")
+            response.raise_for_status()
+        except requests.exceptions.ConnectionError:
+            raise self._bad_connection_error()
+        except requests.exceptions.RequestException as e:
+            raise bad_request(f"Automatic1111 LoRA refresh failed: {e}")
+
     def get_default_sd_model_hash_via_html(self) -> Optional[str]:
         try:
             # This method doesn't seem reliable as we need to rely on predict
@@ -349,6 +370,9 @@ class Automatic1111Client:
                 sd_model_hash=response_info["sd_model_hash"],
                 sampler_name=response_info["sampler_name"],
                 steps=response_info["steps"],
+                model_name=response_info.get("sd_model_name"),
+                width=response_info.get("width"),
+                height=response_info.get("height"),
             )
         except requests.exceptions.ConnectionError:
             raise self._bad_connection_error()

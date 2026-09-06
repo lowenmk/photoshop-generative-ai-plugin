@@ -396,16 +396,26 @@ export class DreamTabInternal extends React.Component {
     this.setState({ negativePrompt });
   }
 
+  applyPromptSettings = (prompt, negativePrompt) => {
+    this.setState({prompt, negativePrompt});
+  }
+
   onImageCountChange = (imageCount) => {
     this.setState({ imageCount });
   }
 
   onSamplingMethodChange = (samplingMethod) => {
-    this.setState({ samplingMethod }, this.notifyModelSettingsChange);
+    this.setState({ samplingMethod }, () => {
+      this.notifyModelSettingsChange();
+      this.props.onSamplingMethodChange?.(samplingMethod);
+    });
   }
 
   onSamplingStepsChange = (samplingSteps) => {
-    this.setState({ samplingSteps }, this.notifyModelSettingsChange);
+    this.setState({ samplingSteps }, () => {
+      this.notifyModelSettingsChange();
+      this.props.onSamplingStepsChange?.(samplingSteps);
+    });
   }
 
   onMaskBlurChange = (maskBlur) => {
@@ -630,11 +640,11 @@ export class DreamTabInternal extends React.Component {
   }
 }
 
-export const DreamTab = (props) => {
+export const DreamTab = React.forwardRef((props, ref) => {
   const modalContext = useContext(ModalContext);
   const alertContext = useContext(AlertContext);
 
   return (
-    <DreamTabInternal {...props} modalContext={modalContext} alertContext={alertContext}/>
+    <DreamTabInternal {...props} ref={ref} modalContext={modalContext} alertContext={alertContext}/>
   );
-}
+});

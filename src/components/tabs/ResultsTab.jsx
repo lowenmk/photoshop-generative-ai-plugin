@@ -56,11 +56,15 @@ const ResultItem = (
     deletePending,
     isSelected,
     onSelect,
+    metadata,
+    onSamplingMethodChange,
+    onSamplingStepsChange,
   }
 ) => {
   const alertContext = useContext(AlertContext);
   const thumbnailUrl = `${STATIC_FILES_URL}/${thumbnailFileName}`;
   const [thumbnailSrc, setThumbnailSrc] = useState(null);
+  const [showMetadata, setShowMetadata] = useState(false);
   const effectivePlacementMode = placementMode || PLACEMENT_MODES.NEW_LAYER;
   console.log("[EasySD ResultItem] render", {resultIndex, imageFileName, thumbnailFileName, requestId, isSelected});
 
@@ -204,7 +208,17 @@ const ResultItem = (
               >DS {displayDenoisingStrength}
               </sp-action-button>
             ) : null}
+            <sp-action-button class="resultControlsButton resultMetadataButton" title="Show generation metadata" onClick={() => setShowMetadata(!showMetadata)}>Info</sp-action-button>
           </div>
+          {showMetadata ? <div className="resultMetadataDetails">
+            <sp-body size="S">Model: {metadata?.model_name || metadata?.model_hash || "Unknown"}</sp-body>
+            <sp-body size="S">Sampler: {metadata?.sampler_name || "Unknown"} {metadata?.sampling_steps ? `(${metadata.sampling_steps} steps)` : ""}</sp-body>
+            <sp-body size="S">Size: {metadata?.generated_width && metadata?.generated_height ? `${metadata.generated_width} x ${metadata.generated_height}` : "Unknown"}</sp-body>
+            <sp-body size="S">Mode: {metadata?.inference_type || "Unknown"}</sp-body>
+            {metadata?.loras?.length ? <sp-body size="S">LoRA: {metadata.loras.map(lora => `${lora.name}:${lora.weight}`).join(", ")}</sp-body> : null}
+            {metadata?.sampler_name ? <sp-action-button onClick={() => onSamplingMethodChange?.(metadata.sampler_name)}>Use sampler</sp-action-button> : null}
+            {metadata?.sampling_steps ? <sp-action-button onClick={() => onSamplingStepsChange?.(metadata.sampling_steps)}>Use steps</sp-action-button> : null}
+          </div> : null}
           {deletePending ? (
             <div className="container flexRow resultDeleteInline">
               <sp-action-button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(e, imageFileName, true); }}>Confirm</sp-action-button>
@@ -240,6 +254,10 @@ const ResultGroup = (
     pendingBatchDelete,
     pendingResultDelete,
     onSelect,
+    metadata,
+    onSamplingMethodChange,
+    onSamplingStepsChange,
+    onUsePrompt,
   }
 ) => {
   const promptAndNegativePrompt = prompt + (negativePrompt ? ` / ${negativePrompt}` : "");
@@ -272,6 +290,7 @@ const ResultGroup = (
           ) : (
             <sp-action-button class="resultBatchDeleteButton" title="Delete batch" aria-label="Delete batch" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeleteBatch(e, requestId); }}><span slot="icon"><TrashIcon /></span>Batch</sp-action-button>
           )}
+          <sp-action-button class="resultUsePromptButton" title="Use batch prompt" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onUsePrompt(prompt, negativePrompt); }}>Use Prompt</sp-action-button>
         </div>
         <sp-divider size="medium"></sp-divider>
         <Space1 />
@@ -300,6 +319,9 @@ const ResultGroup = (
                   deletePending={pendingResultDelete === result.image_file_name}
                   isSelected={selectedIndex === resultIndex}
                   onSelect={() => onSelect(resultIndex)}
+                  metadata={metadata}
+                  onSamplingMethodChange={onSamplingMethodChange}
+                  onSamplingStepsChange={onSamplingStepsChange}
                 />
               ))}
             </div>
@@ -433,6 +455,9 @@ export class ResultsTab extends React.Component {
       onSeedChange,
       onCfgScaleChange,
       onDenoisingStrengthChange,
+      onSamplingMethodChange,
+      onSamplingStepsChange,
+      onUsePrompt,
     } = this.props;
     let {collapsedResultsMap} = this.state;
 
@@ -474,6 +499,10 @@ export class ResultsTab extends React.Component {
                 pendingResultDelete={this.state.deleteConfirmation?.type === "result" ? this.state.deleteConfirmation.imageFileName : null}
                 selectedIndex={this.state.selectedIndex[resultGroup.request_id] ?? 0}
                 onSelect={(index) => this.onSelect(resultGroup.request_id, index)}
+                metadata={resultGroup}
+                onSamplingMethodChange={onSamplingMethodChange}
+                onSamplingStepsChange={onSamplingStepsChange}
+                onUsePrompt={onUsePrompt}
               />
             );
           })}

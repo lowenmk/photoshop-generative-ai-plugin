@@ -36,6 +36,12 @@
     border-radius: 4px;
 }
 
+.promptControl, .loraControls { gap: 2px; }
+.promptFieldLabel { font-weight: 600; }
+.promptClearButton { align-self: flex-end; min-height: 22px; height: 22px; }
+.loraPicker { flex: 1 1 120px; min-width: 0; }
+.loraWeight { flex: 0 1 58px; min-width: 48px; }
+
 .dreamPromptTextArea:focus {
     border-color: var(--uxp-host-link-text-color);
 }

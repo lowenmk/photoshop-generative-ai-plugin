@@ -135,6 +135,11 @@ async def model_settings():
     return await _run("model_settings_round_trip", {}, timeout_seconds=180)
 
 
+@router.post("/test/lora-prompt")
+async def lora_prompt():
+    return await _run("lora_prompt_tokens", {})
+
+
 @router.post("/test/place/new-layer")
 async def place_new_layer(payload: dict):
     return await _run("place_new_layer", payload)

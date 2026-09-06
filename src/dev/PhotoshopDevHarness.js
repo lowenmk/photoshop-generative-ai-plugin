@@ -15,8 +15,10 @@ const {localServerApi} = require("../api/localServerApi");
 const {settingsStorage} = require("../utils/SettingsStorage");
 const {getActiveMainPanelInstance} = require("../panels/MainPanel");
 const {setFailurePoint, clearFailurePoint} = require("./DevFailureInjector");
+const {buildLoraToken, insertLoraToken} = require("../utils/promptUtils");
 
 const HARNESS_REQUEST_PREFIX = "test-phase1-";
+const HARNESS_DOCUMENT_PREFIX = "EasySD Harness";
 const ownedDocumentIds = new Set();
 
 const dimension = (value) => {
@@ -51,11 +53,15 @@ const serializeDocument = (document) => ({
 
 class PhotoshopDevHarness {
   assertOwnedActiveDocument = () => {
-    const documentId = app.activeDocument?._id;
+    const activeDocument = app.activeDocument;
+    const documentId = activeDocument?._id;
+    if (documentId && !ownedDocumentIds.has(documentId) && activeDocument?.name?.startsWith(HARNESS_DOCUMENT_PREFIX)) {
+      ownedDocumentIds.add(documentId);
+    }
     if (!documentId || !ownedDocumentIds.has(documentId)) {
       throw new Error("Development command requires an active harness-owned document");
     }
-    return app.activeDocument;
+    return activeDocument;
   };
 
   getState = async () => {
@@ -105,8 +111,11 @@ class PhotoshopDevHarness {
   };
 
   closeTestDocument = async ({document_id: documentId} = {}) => {
-    if (!ownedDocumentIds.has(documentId)) throw new Error("Refusing to close a non-harness document");
     const document = app.documents.find(item => item._id === documentId);
+    if (!ownedDocumentIds.has(documentId) && !document?.name?.startsWith(HARNESS_DOCUMENT_PREFIX)) {
+      throw new Error("Refusing to close a non-harness document");
+    }
+    ownedDocumentIds.add(documentId);
     if (!document) { ownedDocumentIds.delete(documentId); return {closed: false, documentId}; }
     await executeAsModal(() => document.closeWithoutSaving());
     ownedDocumentIds.delete(documentId);
@@ -325,6 +334,15 @@ class PhotoshopDevHarness {
     }
   };
 
+  loraPromptTokens = async () => ({
+    token: buildLoraToken("test-lora", 0.8),
+    empty: insertLoraToken("", "test-lora", 0.8),
+    appended: insertLoraToken("portrait", "test-lora", 0.8),
+    replaced: insertLoraToken("portrait, <lora:test-lora:0.2>", "test-lora", 0.8),
+    multiple: insertLoraToken(insertLoraToken("portrait", "one", 0.7), "two", 0.5),
+    negativePrompt: "soft focus",
+  });
+
   exportCurrentSelectionMask = async (payload = {}) => {
     this.assertOwnedActiveDocument();
     const result = await photoshopApp.exportSelectionAsMask({
@@ -374,6 +392,7 @@ class PhotoshopDevHarness {
       case "generate_inpaint": return this.generate({...payload, inference_type: InferenceType.INPAINT});
       case "cleanup_result_batch": return this.cleanupResultBatch(payload);
       case "model_settings_round_trip": return this.modelSettingsRoundTrip();
+      case "lora_prompt_tokens": return this.loraPromptTokens();
       case "place_new_layer": return this.placeNewLayer(payload);
       case "place_replace_area": return this.placeReplaceArea(payload);
       case "place_open_image": return this.placeOpenImage(payload);

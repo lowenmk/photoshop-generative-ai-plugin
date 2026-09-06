@@ -37,6 +37,7 @@ class BaseAutomatic1111GenerateImageRequest(BaseModel):
     sampling_steps: int
     restore_faces: bool
     selection_area: Optional[SelectionArea]
+    inference_type: Optional[str] = None
 
 
 class Automatic1111GenerateTxt2ImgRequest(BaseAutomatic1111GenerateImageRequest):
@@ -121,6 +122,15 @@ class Automatic1111Sampler(BaseModel):
 
 class Automatic1111GetSamplersResponse(BaseModel):
     samplers: List[Automatic1111Sampler]
+
+
+class Automatic1111Lora(BaseModel):
+    name: str
+    alias: Optional[str] = None
+
+
+class Automatic1111GetLorasResponse(BaseModel):
+    loras: List[Automatic1111Lora]
 
 
 class Automatic1111ChangeCurrentModelResponse(BaseModel):

@@ -285,6 +285,21 @@ export class MainPanelInternal extends React.Component {
     settingsStorage.updateMainPanelSettingsSync({ denoisingStrength })
   }
 
+  onSamplingMethodChange = (samplingMethod) => {
+    this.dreamTabRef?.setState({samplingMethod});
+    this.onDreamModelSettingsChange({samplingMethod});
+  }
+
+  onSamplingStepsChange = (samplingSteps) => {
+    this.dreamTabRef?.setState({samplingSteps});
+    this.onDreamModelSettingsChange({samplingSteps});
+  }
+
+  onUsePrompt = (prompt, negativePrompt) => {
+    this.dreamTabRef?.applyPromptSettings(prompt, negativePrompt);
+    this.setState({currentTab: MainTab.DREAM});
+  }
+
   render() {
     const {modalName} = this.props.modalContext.modal;
 
@@ -316,6 +331,7 @@ export class MainPanelInternal extends React.Component {
 
             {currentTab === MainTab.DREAM ? (
               <DreamTab
+                ref={(ref) => { this.dreamTabRef = ref; }}
                 seed={seed}
                 onSeedChange={this.onSeedChange}
                 cfgScale={cfgScale}
@@ -338,6 +354,8 @@ export class MainPanelInternal extends React.Component {
                 onModelSettingsChange={this.onDreamModelSettingsChange}
                 onActiveModelDiscovered={this.onActiveModelDiscovered}
                 onModelChangeRequested={this.onModelChangeRequested}
+                onSamplingMethodChange={this.onSamplingMethodChange}
+                onSamplingStepsChange={this.onSamplingStepsChange}
               />
             ) : null}
             {currentTab === MainTab.RESULTS ? (
@@ -347,6 +365,9 @@ export class MainPanelInternal extends React.Component {
                 onSeedChange={this.onSeedChange}
                 onCfgScaleChange={this.onCfgScaleChange}
                 onDenoisingStrengthChange={this.onDenoisingStrengthChange}
+                onSamplingMethodChange={this.onSamplingMethodChange}
+                onSamplingStepsChange={this.onSamplingStepsChange}
+                onUsePrompt={this.onUsePrompt}
               />
             ) : null}
             {currentTab === MainTab.PROMPTS ? (

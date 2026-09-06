@@ -62,6 +62,17 @@ def get_samplers() -> Automatic1111GetSamplersResponse:
     )
 
 
+@router.get("/sd/automatic1111/loras")
+def get_loras():
+    return {"loras": automatic1111_client.get_loras()}
+
+
+@router.post("/sd/automatic1111/loras/refresh")
+def refresh_loras():
+    automatic1111_client.refresh_loras()
+    return {"loras": automatic1111_client.get_loras()}
+
+
 @router.post("/sd/automatic1111/generate/stop")
 def stop_generation():
     # Since image generation is a blocking request, making this call should stop that request asap and make it
@@ -79,6 +90,7 @@ def process_enqueued_request():
 
 @router.post("/sd/automatic1111/generate/txt2img")
 def generate_txt2img(request: Automatic1111GenerateTxt2ImgRequest):
+    request.inference_type = "txt2img"
     document_width = request.document_width
     document_height = request.document_height
 
@@ -114,6 +126,7 @@ def generate_txt2img(request: Automatic1111GenerateTxt2ImgRequest):
 
 @router.post("/sd/automatic1111/generate/img2img")
 def generate_img2img(request: Automatic1111GenerateImg2ImgRequest):
+    request.inference_type = "img2img"
     document_width = request.document_width
     document_height = request.document_height
 
@@ -162,6 +175,7 @@ def generate_img2img(request: Automatic1111GenerateImg2ImgRequest):
 
 @router.post("/sd/automatic1111/generate/inpaint")
 def generate_inpaint(request: Automatic1111GenerateInpaintRequest):
+    request.inference_type = "inpaint"
     document_width = request.document_width
     document_height = request.document_height
 

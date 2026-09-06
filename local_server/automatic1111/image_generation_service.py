@@ -18,6 +18,7 @@ from utils.image_utils import cv2_image_to_base64_string, \
     base64_string_to_cv2_image, \
     paste_image_onto_selection_in_new_image, get_image_thumbnail
 from utils.time_utils import current_time_as_string
+from utils.lora import parse_lora_tokens
 
 
 class ImageGenerationService:
@@ -224,6 +225,14 @@ class ImageGenerationService:
                     denoising_strength=response.denoising_strength,
                     prompt=request.prompt,  # Use original prompt without substitutions
                     negative_prompt=request.negative_prompt,  # Use original prompt without substitutions
+                    sampler_name=response.sampler_name,
+                    sampling_steps=response.steps,
+                    model_hash=response.sd_model_hash,
+                    model_name=response.model_name,
+                    generated_width=response.width or generate_image_width,
+                    generated_height=response.height or generate_image_height,
+                    inference_type=request.inference_type,
+                    loras=parse_lora_tokens(expanded_prompt),
                 )
                 with open(RESULTS_LOG_PATH, "a") as response_log_file:
                     response_log_file.write(response_log_line.to_log_line())

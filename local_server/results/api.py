@@ -68,6 +68,14 @@ def get_all_results():
             request_id=result_group[0].request_id,
             prompt=result_group[0].prompt,
             negative_prompt=result_group[0].negative_prompt,
+            sampler_name=result_group[0].sampler_name,
+            sampling_steps=result_group[0].sampling_steps,
+            model_hash=result_group[0].model_hash,
+            model_name=result_group[0].model_name,
+            generated_width=result_group[0].generated_width,
+            generated_height=result_group[0].generated_height,
+            inference_type=result_group[0].inference_type,
+            loras=result_group[0].loras,
             group_items=sorted(list(map(
                 lambda result: Automatic1111ResultGroupItem(
                     image_file_name=result.image_file_name,

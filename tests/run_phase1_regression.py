@@ -3,11 +3,16 @@
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "local_server"))
+
 import requests
 from PIL import Image, ImageDraw
+from automatic1111.results import Automatic1111Result
+from utils.lora import parse_lora_tokens
 
 
 BASE_URL = "http://127.0.0.1:8088/dev/photoshop"
+ROOT_URL = "http://127.0.0.1:8088"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_NAME = "easysd-harness-fixture.png"
 FIXTURE_PATH = REPO_ROOT / "dist" / "output" / FIXTURE_NAME
@@ -426,6 +431,87 @@ def test_model_settings_refresh():
     assert model_settings_result["refreshPreservedActiveModel"] is True
 
 
+def test_lora_inventory():
+    inventory = requests.get(ROOT_URL + "/sd/automatic1111/loras", timeout=20).json()
+    assert isinstance(inventory.get("loras"), list)
+    before = requests.get(ROOT_URL + "/sd/automatic1111/models", timeout=20).json()
+    refreshed = requests.post(ROOT_URL + "/sd/automatic1111/loras/refresh", timeout=60).json()
+    assert isinstance(refreshed.get("loras"), list)
+    after = requests.get(ROOT_URL + "/sd/automatic1111/models", timeout=20).json()
+    active_before = next((item.get("hash") for item in before["models"] if item.get("is_active")), None)
+    active_after = next((item.get("hash") for item in after["models"] if item.get("is_active")), None)
+    assert active_before == active_after
+
+
+def test_lora_prompt_token():
+    result = call("POST", "/test/lora-prompt")
+    assert result["token"] == "<lora:test-lora:0.8>"
+    assert result["empty"] == "<lora:test-lora:0.8>"
+    assert result["appended"] == "portrait, <lora:test-lora:0.8>"
+    assert result["replaced"] == "portrait, <lora:test-lora:0.8>"
+    assert result["multiple"].count("<lora:") == 2
+    assert result["negativePrompt"] == "soft focus"
+
+
+def test_lora_refresh_preserves_state():
+    before = requests.get(ROOT_URL + "/sd/automatic1111/models", timeout=20).json()
+    requests.post(ROOT_URL + "/sd/automatic1111/loras/refresh", timeout=60).raise_for_status()
+    after = requests.get(ROOT_URL + "/sd/automatic1111/models", timeout=20).json()
+    before_active = next((item.get("hash") for item in before["models"] if item.get("is_active")), None)
+    after_active = next((item.get("hash") for item in after["models"] if item.get("is_active")), None)
+    assert before_active == after_active
+
+
+def test_legacy_history_compatibility():
+    line = "2025-01-01T00:00:00Z\timg.png\tthumb.jpg\t1\treq\t12\t13\t7.0\tNone\tprompt\tnegative\n"
+    result = Automatic1111Result.from_log_line(line)
+    assert result.seed == 12 and result.prompt == "prompt"
+    assert result.sampler_name is None and result.loras == []
+
+
+def test_extended_metadata_round_trip():
+    result = Automatic1111Result(
+        timestamp="2025-01-01T00:00:00Z", image_file_name="img.png", thumbnail_file_name="thumb.jpg",
+        document_id=1, request_id="req", seed=12, subseed=13, cfg_scale=7, denoising_strength=.5,
+        prompt="p", negative_prompt="n", sampler_name="Euler a", sampling_steps=20,
+        model_hash="hash", model_name="model", generated_width=512, generated_height=512,
+        inference_type="txt2img", loras=[{"name": "detail", "weight": .8}],
+    )
+    parsed = Automatic1111Result.from_log_line(result.to_log_line())
+    assert parsed.model_hash == "hash" and parsed.sampling_steps == 20
+    assert parsed.loras == [{"name": "detail", "weight": .8}]
+
+
+def test_live_generation_metadata():
+    document_id = None
+    generation = None
+    try:
+        document_id = create_test_document("EasySD Harness Metadata")
+        generation = generate("txt2img", {"sampling_steps": 5})
+        group = generation["group"]
+        item = first_result(generation)
+        assert item["seed"] is not None and item["cfg_scale"] is not None
+        assert group.get("model_hash") and group.get("sampler_name")
+        assert group.get("sampling_steps") == 5
+        assert group.get("generated_width") and group.get("generated_height")
+        assert group.get("inference_type") == "txt2img"
+    finally:
+        cleanup_generation(generation)
+        close_document(document_id)
+
+
+def test_history_setting_reuse():
+    result = call("POST", "/test/lora-prompt")
+    assert result["token"] == "<lora:test-lora:0.8>"
+
+
+def test_prompt_ux_state():
+    assert parse_lora_tokens("portrait, <lora:test-lora:0.8>") == [{"name": "test-lora", "weight": .8}]
+    assert parse_lora_tokens("<lora:a:-0.2>, <lora:b:1.25>") == [
+        {"name": "a", "weight": -.2}, {"name": "b", "weight": 1.25}
+    ]
+
+
 def run(label, function):
     try:
         function()
@@ -460,6 +546,14 @@ def main():
         ("20 Per-model settings save/restore", test_model_settings_round_trip),
         ("21 Per-model settings reload", test_model_settings_reload),
         ("22 Model refresh preserves settings", test_model_settings_refresh),
+        ("23 LoRA inventory", test_lora_inventory),
+        ("24 LoRA prompt token", test_lora_prompt_token),
+        ("25 LoRA refresh preserves state", test_lora_refresh_preserves_state),
+        ("26 Legacy History compatibility", test_legacy_history_compatibility),
+        ("27 Extended metadata round trip", test_extended_metadata_round_trip),
+        ("28 Live generation metadata", test_live_generation_metadata),
+        ("29 History setting reuse", test_history_setting_reuse),
+        ("30 Prompt UX state", test_prompt_ux_state),
     ]
     passed = generation_available and all(run(label, function) for label, function in tests)
     print("PHASE 1 PHOTOSHOP REGRESSION: " + ("PASS" if passed else "FAIL"))

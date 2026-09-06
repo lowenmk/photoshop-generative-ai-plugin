@@ -16,6 +16,7 @@ ALLOWED_COMMAND_TYPES = {
     "generate_inpaint",
     "cleanup_result_batch",
     "model_settings_round_trip",
+    "lora_prompt_tokens",
     "place_new_layer",
     "place_replace_area",
     "place_open_image",
