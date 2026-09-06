@@ -16,6 +16,7 @@ from automatic1111.run_configuration_provider import run_configuration_provider
 from automatic1111.controlnet_installer import install_controlnet
 from utils.constants import OUTPUT_FOLDER_PATH
 from utils.image_utils import extract_image_from_selection_and_scale, convert_mask_image, get_scale_factor, \
+    expand_inpaint_context_area, \
     read_image_as_full_sized_layer, adjust_selection_area
 
 router = APIRouter()
@@ -267,6 +268,18 @@ def generate_inpaint(request: Automatic1111GenerateInpaintRequest):
         document_width=document_width,
         document_height=document_height,
     )
+    selection_area = adjust_selection_area(
+        user_input_selection_area=expand_inpaint_context_area(
+            selection_area,
+            document_width=document_width,
+            document_height=document_height,
+        ),
+        source_image_area=source_image_area,
+        mask_image_area=mask_image_area,
+        document_width=document_width,
+        document_height=document_height,
+    )
+    print(f"Inpaint context area expanded to: {selection_area}")
 
     source_image_cropped_scaled, scale_factor = extract_image_from_selection_and_scale(source_image, selection_area)
     # cv2.imwrite(str(OUTPUT_FOLDER_PATH / f"debug_{request.request_id}_source_cropped_scaled.png"), source_image_cropped_scaled)

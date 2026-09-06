@@ -15,6 +15,7 @@ from utils.exceptions import server_error, bad_request
 
 # How much larger the selection area would be than the corresponding mask
 MASK_IMAGE_AREA_EXPAND_FACTOR = 1.5
+INPAINT_CONTEXT_EXPAND_FACTOR = 2.0
 
 
 def pil_image_to_base64_string(pil_image):
@@ -288,6 +289,23 @@ def expand_mask_area(mask_image_area: SelectionArea) -> SelectionArea:
         width=width,
         height=height,
     )
+
+
+def expand_inpaint_context_area(
+        selection_area: SelectionArea,
+        document_width: int,
+        document_height: int,
+) -> SelectionArea:
+    """Add preserved source context around an inpaint region without changing mask polarity."""
+    width = max(selection_area.width, int(selection_area.width * INPAINT_CONTEXT_EXPAND_FACTOR))
+    height = max(selection_area.height, int(selection_area.height * INPAINT_CONTEXT_EXPAND_FACTOR))
+    x = selection_area.x - (width - selection_area.width) // 2
+    y = selection_area.y - (height - selection_area.height) // 2
+    x = max(0, x)
+    y = max(0, y)
+    x2 = min(document_width, x + width)
+    y2 = min(document_height, y + height)
+    return SelectionArea(x=x, y=y, width=x2 - x, height=y2 - y)
 
 
 def areas_intersect(area1, area2):
