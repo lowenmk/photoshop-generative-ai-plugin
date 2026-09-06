@@ -95,7 +95,7 @@ class PhotoshopDevHarness {
         name: payload.name || `EasySD Test ${Date.now()}`,
       });
       background = document.backgroundLayer;
-      if (payload.lock_background !== false && background) {
+      if (payload.lock_background !== false && !payload.controlnet_fixture && background) {
         await batchPlay([{
           _obj: "set",
           _target: [{_ref: "layer", _id: background._id}],
@@ -110,6 +110,21 @@ class PhotoshopDevHarness {
       }
     });
     ownedDocumentIds.add(document._id);
+    if (payload.controlnet_fixture) {
+      // Use the normal Photoshop selection/fill path to create visible edge structure
+      // for the dev-only ControlNet generation probe.
+      await photoshopApp.applySelectionArea({x: 96, y: 96, width: 320, height: 320});
+      await executeAsModal(() => batchPlay([{
+        _obj: "fill",
+        using: {_enum: "fillContents", _value: "black"},
+        opacity: {_unit: "percentUnit", _value: 100},
+        mode: {_enum: "blendMode", _value: "normal"},
+      }], {modalBehavior: "execute"}));
+      await executeAsModal(() => batchPlay([{
+        _obj: "set", _target: [{_ref: "channel", _property: "selection"}],
+        to: {_enum: "ordinal", _value: "none"},
+      }], {modalBehavior: "execute"}));
+    }
     return {document: serializeDocument(document), harnessOwned: true, backgroundId: background?._id ?? null};
   };
 
@@ -222,6 +237,15 @@ class PhotoshopDevHarness {
       denoisingStrength: DEFAULT_DENOISING_STRENGTH,
       inferenceType,
       maskSource,
+      controlNet: payload.controlnet ? {
+        enabled: Boolean(payload.controlnet.enabled),
+        model: payload.controlnet.model || "",
+        module: payload.controlnet.module || "canny",
+        weight: Number(payload.controlnet.weight ?? 1),
+        start: Number(payload.controlnet.guidance_start ?? payload.controlnet.start ?? 0),
+        end: Number(payload.controlnet.guidance_end ?? payload.controlnet.end ?? 1),
+        sourceMode: payload.controlnet.source_mode || "sourceLayer",
+      } : undefined,
       maskBlur: DEFAULT_DREAM_TAB_SETTINGS.maskBlur,
       maskedContent: DEFAULT_DREAM_TAB_SETTINGS.maskedContent,
       selectionInvert: Boolean(payload.selection_invert),
