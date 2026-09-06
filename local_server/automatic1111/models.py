@@ -39,6 +39,9 @@ class ControlNetUnit(BaseModel):
 class Automatic1111ControlNetRequest(BaseModel):
     enabled: bool = False
     units: List[ControlNetUnit] = []
+    source_image_path: Optional[str] = None
+    source_image_x: Optional[int] = None
+    source_image_y: Optional[int] = None
 
 
 class BaseAutomatic1111GenerateImageRequest(BaseModel):
@@ -112,6 +115,7 @@ class Automatic1111BatchGenerateImageRequest(BaseModel):
     mask_image_cropped_to_selection: Optional[Any] = None
     mask_blur: Optional[int] = None
     masked_content: Optional[MaskedContent] = None
+    controlnet_source_image_cropped_to_selection: Optional[Any] = None
 
 
 class Automatic1111StatusResponse(BaseModel):

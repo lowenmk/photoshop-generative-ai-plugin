@@ -1,6 +1,7 @@
 const {NetworkError} = require("../exceptions/Exceptions");
 const {ajaxClient} = require("./ajaxClient");
 const {createLoraCache} = require("./loraCache");
+const {createControlNetCache} = require("./controlNetCache");
 
 class LocalServerApi {
 
@@ -24,13 +25,19 @@ class LocalServerApi {
     requestVersion: 0,
   }
 
-  controlNetCache = {
-    initialized: false,
-    status: {available: false, version: null, models: [], modules: [], reason: null},
-    fetchPromise: null,
-    refreshPromise: null,
-    requestVersion: 0,
-  }
+  controlNetCache = createControlNetCache(
+    async () => {
+      try {
+        return await ajaxClient.get("/sd/automatic1111/controlnet/status")
+      } catch (error) {
+        if (error?.status === 404) {
+          return {available: false, version: null, models: [], modules: [], reason: "ControlNet unavailable"}
+        }
+        throw error
+      }
+    },
+    async () => ajaxClient.post("/sd/automatic1111/controlnet/refresh"),
+  )
 
   lorasCache = createLoraCache(
     async () => (await ajaxClient.get("/sd/automatic1111/loras")).loras,
@@ -161,46 +168,11 @@ class LocalServerApi {
   }
 
   getControlNetStatus = async () => {
-    if (this.controlNetCache.initialized) return this.controlNetCache.status
-    if (this.controlNetCache.fetchPromise) return this.controlNetCache.fetchPromise
-    this.controlNetCache.fetchPromise = (async () => {
-      try {
-        const status = await ajaxClient.get("/sd/automatic1111/controlnet/status")
-        this.controlNetCache.status = status
-        this.controlNetCache.initialized = true
-        return status
-      } catch (error) {
-        // An absent extension is a supported state, not a generation failure.
-        if (error?.status === 404) {
-          const unavailable = {available: false, version: null, models: [], modules: [], reason: "ControlNet unavailable"}
-          this.controlNetCache.status = unavailable
-          this.controlNetCache.initialized = true
-          return unavailable
-        }
-        throw error
-      } finally {
-        this.controlNetCache.fetchPromise = null
-      }
-    })()
-    return this.controlNetCache.fetchPromise
+    return this.controlNetCache.get()
   }
 
   refreshControlNet = async () => {
-    if (this.controlNetCache.refreshPromise) return this.controlNetCache.refreshPromise
-    const requestVersion = ++this.controlNetCache.requestVersion
-    this.controlNetCache.refreshPromise = (async () => {
-      try {
-        const status = await ajaxClient.post("/sd/automatic1111/controlnet/refresh")
-        if (requestVersion === this.controlNetCache.requestVersion) {
-          this.controlNetCache.status = status
-          this.controlNetCache.initialized = true
-        }
-        return status
-      } finally {
-        if (requestVersion === this.controlNetCache.requestVersion) this.controlNetCache.refreshPromise = null
-      }
-    })()
-    return this.controlNetCache.refreshPromise
+    return this.controlNetCache.refresh()
   }
 
   enqueueTxt2ImgRequest = async (request) => {
@@ -224,7 +196,7 @@ class LocalServerApi {
     )
   }
 
-  buildControlNetRequest = (controlnet) => {
+  buildControlNetRequest = (controlnet, source = {}) => {
     if (!controlnet?.enabled) return undefined
     const units = [{
       enabled: true,
@@ -235,7 +207,13 @@ class LocalServerApi {
       guidance_end: Number(controlnet.end),
       source_mode: controlnet.sourceMode || "sourceLayer",
     }]
-    return {enabled: true, units}
+    return {
+      enabled: true,
+      units,
+      source_image_path: source.source_image_path,
+      source_image_x: source.source_image_x,
+      source_image_y: source.source_image_y,
+    }
   }
 
   processEnqueuedRequest = async () => {

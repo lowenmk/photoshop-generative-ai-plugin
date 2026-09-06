@@ -20,6 +20,20 @@ from utils.image_utils import extract_image_from_selection_and_scale, convert_ma
 router = APIRouter()
 
 
+def _read_controlnet_source(request, document_width, document_height):
+    controlnet = request.controlnet
+    if not controlnet or not controlnet.enabled or not controlnet.source_image_path:
+        return None, None
+    return read_image_as_full_sized_layer(
+        document_width=document_width,
+        document_height=document_height,
+        image_file_path=controlnet.source_image_path,
+        image_x=controlnet.source_image_x or 0,
+        image_y=controlnet.source_image_y or 0,
+        layer_description="ControlNet source layer",
+    )
+
+
 @router.get("/sd/automatic1111/status")
 def get_status() -> Automatic1111StatusResponse:
     is_reachable = automatic1111_client.is_reachable()
@@ -116,10 +130,11 @@ def generate_txt2img(request: Automatic1111GenerateTxt2ImgRequest):
     request.inference_type = "txt2img"
     document_width = request.document_width
     document_height = request.document_height
+    controlnet_source, controlnet_source_area = _read_controlnet_source(request, document_width, document_height)
 
     selection_area = adjust_selection_area(
         user_input_selection_area=request.selection_area,
-        source_image_area=None,
+        source_image_area=controlnet_source_area,
         mask_image_area=None,
         document_width=document_width,
         document_height=document_height,
@@ -143,6 +158,10 @@ def generate_txt2img(request: Automatic1111GenerateTxt2ImgRequest):
             generate_image_height=scaled_height,
             scale_factor=scale_factor,
             selection_area=selection_area,
+            controlnet_source_image_cropped_to_selection=(
+                extract_image_from_selection_and_scale(controlnet_source, selection_area)[0]
+                if controlnet_source is not None else None
+            ),
         )
     )
 
@@ -152,6 +171,7 @@ def generate_img2img(request: Automatic1111GenerateImg2ImgRequest):
     request.inference_type = "img2img"
     document_width = request.document_width
     document_height = request.document_height
+    controlnet_source, controlnet_source_area = _read_controlnet_source(request, document_width, document_height)
 
     source_image, source_image_area = read_image_as_full_sized_layer(
         document_width=document_width,
@@ -192,6 +212,10 @@ def generate_img2img(request: Automatic1111GenerateImg2ImgRequest):
             selection_area=selection_area,
             scale_factor=scale_factor,
             source_image_cropped_to_selection=source_image_cropped_scaled,
+            controlnet_source_image_cropped_to_selection=(
+                extract_image_from_selection_and_scale(controlnet_source, selection_area)[0]
+                if controlnet_source is not None else None
+            ),
         )
     )
 
@@ -201,6 +225,7 @@ def generate_inpaint(request: Automatic1111GenerateInpaintRequest):
     request.inference_type = "inpaint"
     document_width = request.document_width
     document_height = request.document_height
+    controlnet_source, controlnet_source_area = _read_controlnet_source(request, document_width, document_height)
 
     source_image, source_image_area = read_image_as_full_sized_layer(
         document_width=document_width,
@@ -255,6 +280,10 @@ def generate_inpaint(request: Automatic1111GenerateInpaintRequest):
             selection_area=selection_area,
             scale_factor=scale_factor,
             source_image_cropped_to_selection=source_image_cropped_scaled,
+            controlnet_source_image_cropped_to_selection=(
+                extract_image_from_selection_and_scale(controlnet_source, selection_area)[0]
+                if controlnet_source is not None else None
+            ),
             mask_image_cropped_to_selection=mask_image_cropped_scaled_converted,
             mask_blur=request.mask_blur,
             masked_content=request.masked_content,

@@ -181,6 +181,7 @@ export class DreamTabInternal extends React.Component {
 
       const activeDocument = photoshopApp.getActiveDocument()
       let selectionArea = await photoshopApp.getSelectionArea();
+      const controlNetSource = await this.getControlNetSourceRequestPart(activeDocument, sourceLayer, controlNet)
 
       // These options apply to all inference types
       const baseRequest = {
@@ -228,7 +229,7 @@ export class DreamTabInternal extends React.Component {
         ...img2imgOrInpaintingRequestPart,
         ...inpaintingRequestPart,
       }
-      const controlNetRequest = localServerApi.buildControlNetRequest(controlNet)
+      const controlNetRequest = localServerApi.buildControlNetRequest(controlNet, controlNetSource)
       if (controlNetRequest) request.controlnet = controlNetRequest
       if (inpaintingRequestPart.effective_selection_area) {
         request.selection_area = inpaintingRequestPart.effective_selection_area;
@@ -350,6 +351,21 @@ export class DreamTabInternal extends React.Component {
       source_image_x: sourceLayerArea.x,
       source_image_y: sourceLayerArea.y,
     };
+  }
+
+  getControlNetSourceRequestPart = async (activeDocument, sourceLayer, controlNet) => {
+    if (!controlNet?.enabled) return {}
+    if (!sourceLayer) {
+      throw new DisplayAsMainAlertError("Choose a source layer before enabling ControlNet")
+    }
+    const sourceLayerPhotoshop = photoshopApp.maybeGetLayerById(sourceLayer._id)
+    if (!sourceLayerPhotoshop) {
+      throw new DisplayAsMainAlertError("Please pick the ControlNet source layer again!")
+    }
+    return photoshopApp.exportControlNetSourceAsImage(
+      sourceLayerPhotoshop,
+      `doc${activeDocument._id}-controlnet`,
+    )
   }
 
   fetchResultGroups = async (requestId) => {

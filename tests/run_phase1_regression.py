@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "local_server"))
 import requests
 from PIL import Image, ImageDraw
 from automatic1111.results import Automatic1111Result
-from automatic1111.models import ControlNetUnit
+from automatic1111.models import ControlNetUnit, Automatic1111ControlNetRequest
 from automatic1111.client import Automatic1111Client
 from utils.lora import parse_lora_tokens
 
@@ -565,8 +565,15 @@ def test_controlnet_request_enabled_payload():
 
 
 def test_controlnet_source_path():
-    unit = ControlNetUnit(source_mode="sourceLayer")
-    assert unit.source_mode == "sourceLayer"
+    request = Automatic1111ControlNetRequest(
+        enabled=True,
+        source_image_path="doc-source.png",
+        source_image_x=12,
+        source_image_y=24,
+        units=[ControlNetUnit(enabled=True, source_mode="sourceLayer")],
+    )
+    assert request.source_image_path == "doc-source.png"
+    assert request.units[0].source_mode == "sourceLayer"
 
 
 def test_controlnet_metadata_round_trip():

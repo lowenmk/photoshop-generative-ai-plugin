@@ -126,6 +126,7 @@ class ImageGenerationService:
                 mask_image_cropped_to_selection=enqueued_request.mask_image_cropped_to_selection,
                 mask_blur=enqueued_request.mask_blur,
                 masked_content=enqueued_request.masked_content,
+                controlnet_source_image_cropped_to_selection=enqueued_request.controlnet_source_image_cropped_to_selection,
             )
         except:
             print(f"Error generating images for request: {enqueued_request.request.request_id}")
@@ -149,6 +150,7 @@ class ImageGenerationService:
             mask_image_cropped_to_selection: Optional[np.ndarray] = None,
             mask_blur: Optional[int] = None,
             masked_content: Optional[MaskedContent] = None,
+            controlnet_source_image_cropped_to_selection: Optional[np.ndarray] = None,
     ):
         print(f"Starting generating images for request: {request.request_id}")
         self.total_requests_count = len(run_configurations)
@@ -168,10 +170,15 @@ class ImageGenerationService:
             controlnet_units = []
             for unit in request.controlnet.units:
                 if unit.source_mode == "sourceLayer":
-                    if source_image_cropped_to_selection is None:
-                        raise bad_request("ControlNet source layer requires an img2img or inpaint source")
+                    controlnet_source = (
+                        controlnet_source_image_cropped_to_selection
+                        if controlnet_source_image_cropped_to_selection is not None
+                        else source_image_cropped_to_selection
+                    )
+                    if controlnet_source is None:
+                        raise bad_request("ControlNet source layer export is missing")
                     unit = unit.copy(update={
-                        "input_image": cv2_image_to_base64_string(source_image_cropped_to_selection),
+                        "input_image": cv2_image_to_base64_string(controlnet_source),
                     })
                 if not unit.input_image:
                     raise bad_request("ControlNet requires a control image")

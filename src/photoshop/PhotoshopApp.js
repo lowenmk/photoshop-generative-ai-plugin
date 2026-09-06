@@ -777,6 +777,16 @@ export class PhotoshopApp {
     }
   }
 
+  exportControlNetSourceAsImage = async (layer, fileNameWithoutExtension) => {
+    const imagePath = await this.saveLayerOrBackgroundAsImage(layer, fileNameWithoutExtension, "png")
+    const bounds = this.getLayerBounds(layer)
+    return {
+      source_image_path: imagePath,
+      source_image_x: bounds.x,
+      source_image_y: bounds.y,
+    }
+  }
+
   openImageAsDocument = async (fileNameWithoutPath) => {
     const imageFileEntry = await this.getImportFile(fileNameWithoutPath);
     const sourceDocumentId = app.activeDocument?._id ?? null;
