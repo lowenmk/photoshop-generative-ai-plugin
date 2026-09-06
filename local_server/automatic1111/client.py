@@ -237,10 +237,16 @@ class Automatic1111Client:
 
     def get_loras(self):
         try:
-            response = requests.get(f"{self._get_base_automatic1111_url()}{LORAS_PATH}").json()
+            raw_response = requests.get(f"{self._get_base_automatic1111_url()}{LORAS_PATH}")
+            raw_response.raise_for_status()
+            response = raw_response.json()
             return [{"name": item.get("name", ""), "alias": item.get("alias")} for item in response]
         except requests.exceptions.ConnectionError:
             raise self._bad_connection_error()
+        except requests.exceptions.RequestException as e:
+            raise bad_request(f"Automatic1111 LoRA inventory failed: {e}")
+        except (TypeError, ValueError) as e:
+            raise bad_request(f"Automatic1111 LoRA inventory returned invalid JSON: {e}")
 
     def refresh_loras(self):
         try:

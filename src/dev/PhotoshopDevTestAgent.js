@@ -2,11 +2,16 @@ const {ajaxClient} = require("../api/ajaxClient");
 const {photoshopDevHarness} = require("./PhotoshopDevHarness");
 
 const POLL_INTERVAL_MS = 350;
+const DISCOVERY_RETRY_INTERVAL_MS = 1000;
 let started = false;
 let disabled = false;
 let pollInFlight = false;
 
 const errorMessage = (error) => error?.message || String(error);
+
+const schedulePoll = (delay = POLL_INTERVAL_MS) => {
+  if (!disabled) setTimeout(poll, delay);
+};
 
 const report = async (commandId, startedAt, ok, value) => {
   const body = {
@@ -43,21 +48,33 @@ const poll = async () => {
     }
   } finally {
     pollInFlight = false;
-    if (!disabled) setTimeout(poll, POLL_INTERVAL_MS);
+    schedulePoll();
+  }
+};
+
+const discover = async () => {
+  if (disabled) return;
+  try {
+    const health = await ajaxClient.get("/dev/photoshop/health");
+    if (health?.dev_test_api !== true) { disabled = true; return; }
+    console.log("[EasySD dev harness] bridge discovered; starting command poll");
+    poll();
+  } catch (error) {
+    if (error?.status === 404) {
+      console.log("[EasySD dev harness] dev API unavailable; disabling agent");
+      disabled = true;
+      return;
+    }
+    if (!String(errorMessage(error)).includes("Cannot reach local server")) {
+      console.error("[EasySD dev harness] discovery failed", error);
+    }
+    setTimeout(discover, DISCOVERY_RETRY_INTERVAL_MS);
   }
 };
 
 export const startPhotoshopDevTestAgent = async () => {
   if (started) return;
   started = true;
-  try {
-    const health = await ajaxClient.get("/dev/photoshop/health");
-    if (health?.dev_test_api !== true) { disabled = true; return; }
-    poll();
-  } catch (error) {
-    if (error?.status !== 404 && !String(errorMessage(error)).includes("Cannot reach local server")) {
-      console.error("[EasySD dev harness] discovery failed", error);
-    }
-    disabled = true;
-  }
+  console.log("[EasySD dev harness] agent starting");
+  discover();
 };

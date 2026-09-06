@@ -512,6 +512,29 @@ def test_prompt_ux_state():
     ]
 
 
+def test_history_use_prompt_remount():
+    result = call("POST", "/test/history-use-prompt")
+    assert result["prompt"] == "phase2-history-positive"
+    assert result["negativePrompt"] == "phase2-history-negative"
+    assert result["activeModelHash"]
+
+
+def test_history_reuse_sampler_steps_remount():
+    result = call("POST", "/test/history-reuse-sampler-steps")
+    assert result["samplingMethod"] and result["samplingSteps"] == 47
+    assert result["activeModelHash"]
+
+
+def test_lora_refresh_race():
+    result = call("POST", "/test/lora-refresh-race")
+    assert result["finalName"] == "refresh-result"
+
+
+def test_lora_selection_reconciliation():
+    result = call("POST", "/test/lora-selection-reconciliation")
+    assert result == {"preserved": "lora-two", "replaced": "lora-one", "empty": ""}
+
+
 def run(label, function):
     try:
         function()
@@ -554,6 +577,10 @@ def main():
         ("28 Live generation metadata", test_live_generation_metadata),
         ("29 History setting reuse", test_history_setting_reuse),
         ("30 Prompt UX state", test_prompt_ux_state),
+        ("31 History Use Prompt across remount", test_history_use_prompt_remount),
+        ("32 History sampler/steps across remount", test_history_reuse_sampler_steps_remount),
+        ("33 LoRA refresh race", test_lora_refresh_race),
+        ("34 LoRA selection reconciliation", test_lora_selection_reconciliation),
     ]
     passed = generation_available and all(run(label, function) for label, function in tests)
     print("PHASE 1 PHOTOSHOP REGRESSION: " + ("PASS" if passed else "FAIL"))

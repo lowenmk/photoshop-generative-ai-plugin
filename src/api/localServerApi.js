@@ -1,5 +1,6 @@
 const {NetworkError} = require("../exceptions/Exceptions");
 const {ajaxClient} = require("./ajaxClient");
+const {createLoraCache} = require("./loraCache");
 
 class LocalServerApi {
 
@@ -23,12 +24,10 @@ class LocalServerApi {
     requestVersion: 0,
   }
 
-  lorasCache = {
-    initialized: false,
-    loras: [],
-    fetchPromise: null,
-    refreshPromise: null,
-  }
+  lorasCache = createLoraCache(
+    async () => (await ajaxClient.get("/sd/automatic1111/loras")).loras,
+    async () => (await ajaxClient.post("/sd/automatic1111/loras/refresh")).loras,
+  )
 
   isLocalServerAndAutomatic1111Reachable = async () => {
     try {
@@ -146,34 +145,11 @@ class LocalServerApi {
   }
 
   getAvailableLoras = async () => {
-    if (this.lorasCache.initialized) return this.lorasCache.loras
-    if (this.lorasCache.fetchPromise) return this.lorasCache.fetchPromise
-    this.lorasCache.fetchPromise = (async () => {
-      try {
-        const loras = (await ajaxClient.get("/sd/automatic1111/loras")).loras
-        this.lorasCache.loras = loras
-        this.lorasCache.initialized = true
-        return loras
-      } finally {
-        this.lorasCache.fetchPromise = null
-      }
-    })()
-    return this.lorasCache.fetchPromise
+    return this.lorasCache.get()
   }
 
   refreshAvailableLoras = async () => {
-    if (this.lorasCache.refreshPromise) return this.lorasCache.refreshPromise
-    this.lorasCache.refreshPromise = (async () => {
-      try {
-        const loras = (await ajaxClient.post("/sd/automatic1111/loras/refresh")).loras
-        this.lorasCache.loras = loras
-        this.lorasCache.initialized = true
-        return loras
-      } finally {
-        this.lorasCache.refreshPromise = null
-      }
-    })()
-    return this.lorasCache.refreshPromise
+    return this.lorasCache.refresh()
   }
 
   enqueueTxt2ImgRequest = async (request) => {

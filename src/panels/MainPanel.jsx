@@ -44,6 +44,7 @@ export class MainPanelInternal extends React.Component {
       activeModelHash: null,
       dreamModelSettings: {...DEFAULT_MODEL_SETTINGS},
       modelSettingsToApply: null,
+      pendingPromptSettings: null,
       ...mainPanelSettings,
     }
     this.writeStoredPromptsToBackendInterval = null;
@@ -285,19 +286,37 @@ export class MainPanelInternal extends React.Component {
     settingsStorage.updateMainPanelSettingsSync({ denoisingStrength })
   }
 
-  onSamplingMethodChange = (samplingMethod) => {
-    this.dreamTabRef?.setState({samplingMethod});
-    this.onDreamModelSettingsChange({samplingMethod});
+  onSamplingMethodChange = async (samplingMethod) => {
+    const samplers = await localServerApi.getSamplers();
+    if (!samplers.some(sampler => sampler.samplerName === samplingMethod)) return;
+    if (this.dreamTabRef) this.dreamTabRef.setState({samplingMethod});
+    this.setState(prevState => ({
+      dreamModelSettings: {...prevState.dreamModelSettings, samplingMethod},
+      modelSettingsToApply: {...prevState.dreamModelSettings, samplingMethod},
+    }));
   }
 
   onSamplingStepsChange = (samplingSteps) => {
-    this.dreamTabRef?.setState({samplingSteps});
-    this.onDreamModelSettingsChange({samplingSteps});
+    const normalizedSteps = Number(samplingSteps);
+    if (!Number.isFinite(normalizedSteps) || normalizedSteps <= 0) return;
+    if (this.dreamTabRef) this.dreamTabRef.setState({samplingSteps: normalizedSteps});
+    this.setState(prevState => ({
+      dreamModelSettings: {...prevState.dreamModelSettings, samplingSteps: normalizedSteps},
+      modelSettingsToApply: {...prevState.dreamModelSettings, samplingSteps: normalizedSteps},
+    }));
   }
 
   onUsePrompt = (prompt, negativePrompt) => {
-    this.dreamTabRef?.applyPromptSettings(prompt, negativePrompt);
+    if (this.dreamTabRef) {
+      this.dreamTabRef.applyPromptSettings(prompt, negativePrompt);
+    } else {
+      this.setState({pendingPromptSettings: {prompt, negativePrompt}});
+    }
     this.setState({currentTab: MainTab.DREAM});
+  }
+
+  onPromptSettingsApplied = () => {
+    this.setState({pendingPromptSettings: null});
   }
 
   render() {
@@ -318,6 +337,7 @@ export class MainPanelInternal extends React.Component {
       cfgScale,
       denoisingStrength,
       modelSettingsToApply,
+      pendingPromptSettings,
     } = this.state;
     return (
       <div className="container flexColumn">
@@ -351,6 +371,8 @@ export class MainPanelInternal extends React.Component {
                 storedPrompts={storedPrompts}
                 onStoredPromptsChange={this.onStoredPromptsChange}
                 modelSettings={modelSettingsToApply}
+                pendingPromptSettings={pendingPromptSettings}
+                onPromptSettingsApplied={this.onPromptSettingsApplied}
                 onModelSettingsChange={this.onDreamModelSettingsChange}
                 onActiveModelDiscovered={this.onActiveModelDiscovered}
                 onModelChangeRequested={this.onModelChangeRequested}

@@ -16,6 +16,9 @@ const {settingsStorage} = require("../utils/SettingsStorage");
 const {getActiveMainPanelInstance} = require("../panels/MainPanel");
 const {setFailurePoint, clearFailurePoint} = require("./DevFailureInjector");
 const {buildLoraToken, insertLoraToken} = require("../utils/promptUtils");
+const {reconcileLoraSelection} = require("../utils/loraUtils");
+const {createLoraCache} = require("../api/loraCache");
+const {MainTab} = require("../components/common/MainTabSelection");
 
 const HARNESS_REQUEST_PREFIX = "test-phase1-";
 const HARNESS_DOCUMENT_PREFIX = "EasySD Harness";
@@ -343,6 +346,97 @@ class PhotoshopDevHarness {
     negativePrompt: "soft focus",
   });
 
+  historyUsePromptRemount = async () => {
+    const panel = getActiveMainPanelInstance();
+    if (!panel) throw new Error("MainPanel is not ready for History prompt testing");
+    const originalHash = panel.state.activeModelHash;
+    const originalPrompt = panel.dreamTabRef?.state.prompt || "";
+    const originalNegativePrompt = panel.dreamTabRef?.state.negativePrompt || "";
+    const waitForRender = () => new Promise(resolve => setTimeout(resolve, 100));
+    try {
+      panel.onCurrentTabChange(MainTab.RESULTS);
+      await waitForRender();
+      if (panel.dreamTabRef) throw new Error("DreamTab did not unmount for History test");
+      panel.onUsePrompt("phase2-history-positive", "phase2-history-negative");
+      await waitForRender();
+      const dreamTab = panel.dreamTabRef;
+      if (!dreamTab) throw new Error("DreamTab did not remount after Use Prompt");
+      if (dreamTab.state.prompt !== "phase2-history-positive" || dreamTab.state.negativePrompt !== "phase2-history-negative") {
+        throw new Error("History prompt values were not applied after remount");
+      }
+      if (panel.state.activeModelHash !== originalHash) throw new Error("Use Prompt changed the active model");
+      return {prompt: dreamTab.state.prompt, negativePrompt: dreamTab.state.negativePrompt, activeModelHash: panel.state.activeModelHash};
+    } finally {
+      if (panel.dreamTabRef) panel.dreamTabRef.applyPromptSettings(originalPrompt, originalNegativePrompt);
+      panel.setState({currentTab: MainTab.DREAM});
+      await waitForRender();
+    }
+  };
+
+  historyReuseSamplerStepsRemount = async () => {
+    const panel = getActiveMainPanelInstance();
+    if (!panel) throw new Error("MainPanel is not ready for History settings testing");
+    const originalHash = panel.state.activeModelHash;
+    const originalSettings = panel.getCurrentModelSettings();
+    const samplers = await localServerApi.getSamplers();
+    if (!samplers.length) throw new Error("No samplers available for History settings test");
+    const requestedSampler = samplers[0].samplerName;
+    const requestedSteps = 47;
+    const waitForRender = () => new Promise(resolve => setTimeout(resolve, 100));
+    try {
+      panel.onCurrentTabChange(MainTab.RESULTS);
+      await waitForRender();
+      if (panel.dreamTabRef) throw new Error("DreamTab did not unmount for History settings test");
+      await panel.onSamplingMethodChange(requestedSampler);
+      panel.onSamplingStepsChange(requestedSteps);
+      panel.onCurrentTabChange(MainTab.DREAM);
+      await waitForRender();
+      const dreamTab = panel.dreamTabRef;
+      if (!dreamTab || dreamTab.state.samplingMethod !== requestedSampler || dreamTab.state.samplingSteps !== requestedSteps) {
+        throw new Error("History sampler/steps were not applied after remount");
+      }
+      if (panel.state.activeModelHash !== originalHash) throw new Error("History settings changed the active model");
+      const profile = panel.getCurrentModelSettings();
+      if (profile.samplingMethod !== requestedSampler || profile.samplingSteps !== requestedSteps) {
+        throw new Error("History sampler/steps did not update the active model profile");
+      }
+      return {samplingMethod: requestedSampler, samplingSteps: requestedSteps, activeModelHash: panel.state.activeModelHash};
+    } finally {
+      if (panel.dreamTabRef) {
+        if (originalSettings.samplingMethod) await panel.onSamplingMethodChange(originalSettings.samplingMethod);
+        if (originalSettings.samplingSteps) panel.onSamplingStepsChange(originalSettings.samplingSteps);
+      }
+      panel.setState({currentTab: MainTab.DREAM});
+      await waitForRender();
+    }
+  };
+
+  loraRefreshRace = async () => {
+    let resolveFetch;
+    let resolveRefresh;
+    const cache = createLoraCache(
+      () => new Promise(resolve => { resolveFetch = resolve; }),
+      () => new Promise(resolve => { resolveRefresh = resolve; }),
+    );
+    const fetchPromise = cache.get();
+    const refreshPromise = cache.refresh();
+    resolveRefresh([{name: "refresh-result"}]);
+    await refreshPromise;
+    resolveFetch([{name: "stale-result"}]);
+    await fetchPromise;
+    const final = await cache.get();
+    if (final[0]?.name !== "refresh-result") throw new Error("Stale LoRA fetch overwrote refreshed cache");
+    return {finalName: final[0].name};
+  };
+
+  loraSelectionReconciliation = async () => {
+    const preserved = reconcileLoraSelection([{name: "lora-one"}, {name: "lora-two"}], "lora-two");
+    const replaced = reconcileLoraSelection([{name: "lora-one"}], "lora-two");
+    const empty = reconcileLoraSelection([], "lora-one");
+    if (preserved !== "lora-two" || replaced !== "lora-one" || empty !== "") throw new Error("LoRA selection reconciliation failed");
+    return {preserved, replaced, empty};
+  };
+
   exportCurrentSelectionMask = async (payload = {}) => {
     this.assertOwnedActiveDocument();
     const result = await photoshopApp.exportSelectionAsMask({
@@ -393,6 +487,10 @@ class PhotoshopDevHarness {
       case "cleanup_result_batch": return this.cleanupResultBatch(payload);
       case "model_settings_round_trip": return this.modelSettingsRoundTrip();
       case "lora_prompt_tokens": return this.loraPromptTokens();
+      case "history_use_prompt_remount": return this.historyUsePromptRemount();
+      case "history_reuse_sampler_steps_remount": return this.historyReuseSamplerStepsRemount();
+      case "lora_refresh_race": return this.loraRefreshRace();
+      case "lora_selection_reconciliation": return this.loraSelectionReconciliation();
       case "place_new_layer": return this.placeNewLayer(payload);
       case "place_replace_area": return this.placeReplaceArea(payload);
       case "place_open_image": return this.placeOpenImage(payload);

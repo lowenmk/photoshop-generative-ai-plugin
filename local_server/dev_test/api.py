@@ -140,6 +140,26 @@ async def lora_prompt():
     return await _run("lora_prompt_tokens", {})
 
 
+@router.post("/test/history-use-prompt")
+async def history_use_prompt():
+    return await _run("history_use_prompt_remount", {})
+
+
+@router.post("/test/history-reuse-sampler-steps")
+async def history_reuse_sampler_steps():
+    return await _run("history_reuse_sampler_steps_remount", {})
+
+
+@router.post("/test/lora-refresh-race")
+async def lora_refresh_race():
+    return await _run("lora_refresh_race", {})
+
+
+@router.post("/test/lora-selection-reconciliation")
+async def lora_selection_reconciliation():
+    return await _run("lora_selection_reconciliation", {})
+
+
 @router.post("/test/place/new-layer")
 async def place_new_layer(payload: dict):
     return await _run("place_new_layer", payload)

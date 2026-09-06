@@ -4,6 +4,7 @@ import {Space2} from "../../common/Spaces";
 import {AlertContext} from "../../../contexts/AlertContext";
 import {localServerApi} from "../../../api/localServerApi";
 import {appendPromptShortcut, insertLoraToken} from "../../../utils/promptUtils";
+import {reconcileLoraSelection} from "../../../utils/loraUtils";
 
 const NON_ALPHANUMERIC_REGEX = /[^a-z0-9 ]+/g;
 const WORDS_COUNT_FOR_PROMPT_KEY = 3;
@@ -55,7 +56,11 @@ const LoraControls = ({prompt, onPromptChange}) => {
   const [loading, setLoading] = useState(false);
   const loadLoras = async (refresh = false) => {
     setLoading(true);
-    try { const values = refresh ? await localServerApi.refreshAvailableLoras() : await localServerApi.getAvailableLoras(); setLoras(values); if (!selectedName && values.length) setSelectedName(values[0].name); }
+    try {
+      const values = refresh ? await localServerApi.refreshAvailableLoras() : await localServerApi.getAvailableLoras();
+      setLoras(values);
+      setSelectedName(currentName => reconcileLoraSelection(values, currentName));
+    }
     catch (error) { alertContext.setError(<>Could not load LoRAs</>); }
     finally { setLoading(false); }
   };

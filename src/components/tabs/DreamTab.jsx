@@ -87,10 +87,19 @@ export class DreamTabInternal extends React.Component {
   constructor(props) {
     super(props);
     const savedOrDefaultSettings = settingsStorage.getDreamSettings()
-    this.state = savedOrDefaultSettings;
+    const modelSettings = props.modelSettings || {};
+    const pendingPromptSettings = props.pendingPromptSettings || {};
+    this.state = {
+      ...savedOrDefaultSettings,
+      ...modelSettings,
+      ...pendingPromptSettings,
+    };
   }
 
   componentDidMount() {
+    if (this.props.pendingPromptSettings && this.props.onPromptSettingsApplied) {
+      this.props.onPromptSettingsApplied();
+    }
     this.notifyModelSettingsChange();
   }
 
