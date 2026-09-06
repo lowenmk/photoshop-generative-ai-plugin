@@ -182,13 +182,6 @@ class LocalServerApi {
     })
   }
 
-  installControlNet = async (automatic1111Root, replaceExisting = false) => {
-    return ajaxClient.post("/sd/automatic1111/controlnet/install", {
-      automatic1111_root: automatic1111Root,
-      replace_existing: replaceExisting,
-    })
-  }
-
   enqueueTxt2ImgRequest = async (request) => {
     await ajaxClient.post(
       "/sd/automatic1111/generate/txt2img",

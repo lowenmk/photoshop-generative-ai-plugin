@@ -79,11 +79,6 @@ export class PhotoshopApp {
     return folder?.nativePath || null;
   }
 
-  pickFolder = async () => {
-    const folder = await fs.getFolder();
-    return folder?.nativePath || null;
-  }
-
   getActiveLayer = () => {
     let activeLayers = app.activeDocument.activeLayers
     return activeLayers[0]

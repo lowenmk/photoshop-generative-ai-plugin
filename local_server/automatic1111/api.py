@@ -123,16 +123,6 @@ def install_controlnet_extension(request: ControlNetInstallRequest):
         return {"status": "error", "message": str(error)}
 
 
-@router.post("/sd/automatic1111/controlnet/install")
-def install_controlnet_extension(request: ControlNetInstallRequest):
-    try:
-        return install_controlnet(request.automatic1111_root, request.replace_existing)
-    except ValueError as error:
-        return {"status": "invalid", "message": str(error)}
-    except OSError as error:
-        return {"status": "error", "message": f"ControlNet installation failed: {error}"}
-
-
 @router.post("/sd/automatic1111/generate/stop")
 def stop_generation():
     # Since image generation is a blocking request, making this call should stop that request asap and make it
