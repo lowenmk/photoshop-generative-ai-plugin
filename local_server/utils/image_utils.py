@@ -89,17 +89,9 @@ def extract_image_from_selection_and_scale(
     cropped_image = image[selection_y: selection_y2, selection_x: selection_x2, :]
     # cv2.imwrite(f"E:\\Temp\\test1_cropped_{name}.png", cropped_image)
 
-    is_image_wide = selection_width >= selection_height
-    smaller_dimension = selection_height if is_image_wide else selection_width
-    larger_dimension = selection_width if is_image_wide else selection_height
-
-    # We want to scale image so that smaller dimension is 512 and larger dimension is whatever it is
-    scale_factor = STABLE_DIFFUSION_IMAGE_DIMENSION / smaller_dimension
-    # In case of a rounding error let's round up so that it stays a larger dimension
-    scaled_larger_dimension = math.ceil(larger_dimension * scale_factor)
-
-    scaled_width = scaled_larger_dimension if is_image_wide else STABLE_DIFFUSION_IMAGE_DIMENSION
-    scaled_height = STABLE_DIFFUSION_IMAGE_DIMENSION if is_image_wide else scaled_larger_dimension
+    scaled_width, scaled_height, scale_factor = get_scale_factor(
+        SelectionArea(x=0, y=0, width=selection_width, height=selection_height)
+    )
 
     scaled_image = cv2.resize(
         cropped_image,
@@ -132,13 +124,14 @@ def get_scale_factor(selection_area: SelectionArea) -> Tuple[int, int, float]:
     smaller_dimension = selection_height if is_image_wide else selection_width
     larger_dimension = selection_width if is_image_wide else selection_height
 
-    # We want to scale image so that smaller dimension is 512 and larger dimension is whatever it is
-    scale_factor = STABLE_DIFFUSION_IMAGE_DIMENSION / smaller_dimension
-    # In case of a rounding error let's round up so that it stays a larger dimension
-    scaled_larger_dimension = math.ceil(larger_dimension * scale_factor)
-
-    scaled_width = scaled_larger_dimension if is_image_wide else STABLE_DIFFUSION_IMAGE_DIMENSION
-    scaled_height = STABLE_DIFFUSION_IMAGE_DIMENSION if is_image_wide else scaled_larger_dimension
+    # Keep the usual 512px short side, but cap extreme aspect ratios before they
+    # produce dimensions that exceed Automatic1111's practical image limits.
+    scale_factor = min(
+        STABLE_DIFFUSION_IMAGE_DIMENSION / smaller_dimension,
+        MAX_DIMENSION / larger_dimension,
+    )
+    scaled_width = math.ceil(selection_width * scale_factor)
+    scaled_height = math.ceil(selection_height * scale_factor)
 
     # TODO: Do we need the division by BLOCK_SIZE at all? Does it impact the results? It's taken from the automatic1111
     # UI but maybe it's there just for UX? Do we need to maintain this compatibility?

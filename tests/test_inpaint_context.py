@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from automatic1111.models import SelectionArea
-from utils.image_utils import convert_mask_image, expand_inpaint_context_area
+from utils.image_utils import convert_mask_image, expand_inpaint_context_area, get_scale_factor
 
 
 class InpaintContextTests(unittest.TestCase):
@@ -24,6 +24,20 @@ class InpaintContextTests(unittest.TestCase):
         self.assertEqual(int(converted[50, 60, 0]), 255)
         self.assertEqual(int(converted[0, 0, 0]), 0)
         self.assertEqual(int((converted[:, :, 0] > 0).sum()), 30 * 30)
+
+    def test_extreme_aspect_ratios_are_capped_for_inference(self):
+        for area in (
+            SelectionArea(x=1400, y=1200, width=40, height=2000),
+            SelectionArea(x=500, y=2000, width=3000, height=80),
+        ):
+            width, height, _ = get_scale_factor(area)
+            self.assertLessEqual(max(width, height), 2048)
+            self.assertEqual(width % 8, 0)
+            self.assertEqual(height % 8, 0)
+
+    def test_normal_context_keeps_the_existing_512_short_side(self):
+        width, height, _ = get_scale_factor(SelectionArea(x=0, y=0, width=800, height=800))
+        self.assertEqual((width, height), (512, 512))
 
 
 if __name__ == "__main__":
