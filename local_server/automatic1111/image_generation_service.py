@@ -163,6 +163,27 @@ class ImageGenerationService:
         else:
             mask_base64 = None
 
+        controlnet_units = None
+        if request.controlnet and request.controlnet.enabled:
+            controlnet_units = []
+            for unit in request.controlnet.units:
+                if unit.source_mode == "sourceLayer":
+                    if source_image_cropped_to_selection is None:
+                        raise bad_request("ControlNet source layer requires an img2img or inpaint source")
+                    unit = unit.copy(update={
+                        "input_image": cv2_image_to_base64_string(source_image_cropped_to_selection),
+                    })
+                if not unit.input_image:
+                    raise bad_request("ControlNet requires a control image")
+                controlnet_units.append(unit)
+
+        controlnet_metadata = None
+        if controlnet_units:
+            controlnet_metadata = {
+                "enabled": True,
+                "units": [unit.dict(exclude={"input_image"}) for unit in controlnet_units],
+            }
+
         expanded_prompt = prompt_service.expand_stored_prompts(request.prompt)
         expanded_negative_prompt = prompt_service.expand_stored_prompts(request.negative_prompt)
         request_time_string = current_time_as_string()
@@ -190,6 +211,7 @@ class ImageGenerationService:
                 denoising_strength=run_configuration.denoising_strength,
                 mask_blur=mask_blur,
                 masked_content=masked_content,
+                controlnet_units=controlnet_units,
             ))
 
             for image_base64, seed, subseed in zip(response.images_base64, response.all_seeds, response.all_subseeds):
@@ -233,6 +255,7 @@ class ImageGenerationService:
                     generated_height=response.height or generate_image_height,
                     inference_type=request.inference_type,
                     loras=parse_lora_tokens(expanded_prompt),
+                    controlnet=controlnet_metadata,
                 )
                 with open(RESULTS_LOG_PATH, "a") as response_log_file:
                     response_log_file.write(response_log_line.to_log_line())

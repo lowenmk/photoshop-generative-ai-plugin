@@ -6,7 +6,7 @@ from typing import List, Optional, Dict
 import requests
 from pydantic import BaseModel
 
-from automatic1111.models import Automatic1111SdModel, Automatic1111Sampler
+from automatic1111.models import Automatic1111SdModel, Automatic1111Sampler, ControlNetUnit
 from settings.settings_service import settings_service
 from utils.exceptions import bad_request
 
@@ -20,6 +20,10 @@ SAMPLERS_PATH = "/sdapi/v1/samplers"
 LORAS_PATH = "/sdapi/v1/loras"
 REFRESH_LORAS_PATH = "/sdapi/v1/refresh-loras"
 INTERRUPT_PATH = "/sdapi/v1/interrupt"
+CONTROLNET_VERSION_PATH = "/controlnet/version"
+CONTROLNET_MODELS_PATH = "/controlnet/model_list"
+CONTROLNET_MODULES_PATH = "/controlnet/module_list"
+CONTROLNET_REFRESH_PATH = "/controlnet/refresh_models"
 
 
 MASKED_CONTENT_OPTIONS = ['fill', 'original', 'latent noise', 'latent nothing']
@@ -62,6 +66,7 @@ class Automatic1111ClientGenerateImageRequest(BaseModel):
     denoising_strength: Optional[float]
     mask_blur: Optional[int]
     masked_content: Optional[str]
+    controlnet_units: Optional[List[ControlNetUnit]] = None
 
 
 class Automatic1111ClientGenerateImageResponse(BaseModel):
@@ -85,6 +90,21 @@ class Automatic1111ClientCheckProgressResponse(BaseModel):
 
 
 class Automatic1111Client:
+    @staticmethod
+    def build_controlnet_alwayson_payload(units: Optional[List[ControlNetUnit]]):
+        enabled_units = [unit for unit in (units or []) if unit.enabled]
+        if not enabled_units:
+            return None
+        controlnet_args = []
+        for unit in enabled_units:
+            unit_payload = unit.dict(exclude_none=True)
+            input_image = unit_payload.pop("input_image", None)
+            unit_payload.pop("source_mode", None)
+            if input_image is not None:
+                unit_payload["image"] = input_image
+            controlnet_args.append(unit_payload)
+        return {"alwayson_scripts": {"ControlNet": {"args": controlnet_args}}}
+
     @staticmethod
     def _get_base_automatic1111_url():
         settings = settings_service.get_settings()
@@ -257,6 +277,48 @@ class Automatic1111Client:
         except requests.exceptions.RequestException as e:
             raise bad_request(f"Automatic1111 LoRA refresh failed: {e}")
 
+    def get_controlnet_status(self):
+        """Probe the extension without turning an absent extension into a generation error."""
+        base_url = self._get_base_automatic1111_url()
+        try:
+            version_response = requests.get(f"{base_url}{CONTROLNET_VERSION_PATH}")
+            if version_response.status_code == 404:
+                return {"available": False, "version": None, "models": [], "modules": [],
+                        "reason": "ControlNet extension is not installed or its API is disabled"}
+            version_response.raise_for_status()
+            version = version_response.json()
+            models_response = requests.get(f"{base_url}{CONTROLNET_MODELS_PATH}")
+            modules_response = requests.get(f"{base_url}{CONTROLNET_MODULES_PATH}")
+            models_response.raise_for_status()
+            modules_response.raise_for_status()
+            models = models_response.json().get("model_list", models_response.json())
+            modules = modules_response.json().get("module_list", modules_response.json())
+            if not isinstance(models, list) or not isinstance(modules, list):
+                raise ValueError("ControlNet inventory response must contain lists")
+            return {"available": True, "version": version if isinstance(version, str) else str(version),
+                    "models": models, "modules": modules}
+        except requests.exceptions.ConnectionError:
+            raise self._bad_connection_error()
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                return {"available": False, "version": None, "models": [], "modules": [],
+                        "reason": "ControlNet extension is not installed or its API is disabled"}
+            raise bad_request(f"ControlNet inventory unavailable: {e}")
+        except (requests.exceptions.RequestException, TypeError, ValueError) as e:
+            raise bad_request(f"ControlNet inventory unavailable: {e}")
+
+    def refresh_controlnet(self):
+        try:
+            response = requests.post(f"{self._get_base_automatic1111_url()}{CONTROLNET_REFRESH_PATH}")
+            if response.status_code == 404:
+                return self.get_controlnet_status()
+            response.raise_for_status()
+            return self.get_controlnet_status()
+        except requests.exceptions.ConnectionError:
+            raise self._bad_connection_error()
+        except requests.exceptions.RequestException as e:
+            raise bad_request(f"ControlNet refresh failed: {e}")
+
     def get_default_sd_model_hash_via_html(self) -> Optional[str]:
         try:
             # This method doesn't seem reliable as we need to rely on predict
@@ -357,6 +419,9 @@ class Automatic1111Client:
                 "override_settings": {},
                 "include_init_images": False,
             }
+            controlnet_payload = self.build_controlnet_alwayson_payload(request.controlnet_units)
+            if controlnet_payload:
+                client_request.update(controlnet_payload)
             url = self._get_generate_image_automatic1111_url(has_init_images=has_init_images)
             print(f"Making request to {url}", self._request_without_images(client_request))
             raw_response = requests.post(

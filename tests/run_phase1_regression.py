@@ -8,6 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "local_server"))
 import requests
 from PIL import Image, ImageDraw
 from automatic1111.results import Automatic1111Result
+from automatic1111.models import ControlNetUnit
+from automatic1111.client import Automatic1111Client
 from utils.lora import parse_lora_tokens
 
 
@@ -535,6 +537,63 @@ def test_lora_selection_reconciliation():
     assert result == {"preserved": "lora-two", "replaced": "lora-one", "empty": ""}
 
 
+def test_controlnet_availability_inventory():
+    status = Automatic1111Client().get_controlnet_status()
+    assert isinstance(status["available"], bool)
+    assert isinstance(status["models"], list)
+    assert isinstance(status["modules"], list)
+    if not status["available"]:
+        assert status.get("reason")
+
+
+def test_controlnet_settings_persistence():
+    unit = ControlNetUnit(model="control_v11p_sd15_canny", module="canny", weight=.75,
+                          guidance_start=.1, guidance_end=.9, source_mode="sourceLayer")
+    assert unit.weight == .75 and unit.guidance_start == .1 and unit.guidance_end == .9
+    assert unit.source_mode == "sourceLayer"
+
+
+def test_controlnet_request_disabled_path():
+    assert Automatic1111Client.build_controlnet_alwayson_payload([]) is None
+
+
+def test_controlnet_request_enabled_payload():
+    unit = ControlNetUnit(enabled=True, model="model", module="canny", input_image="encoded")
+    payload = Automatic1111Client.build_controlnet_alwayson_payload([unit])
+    serialized = payload["alwayson_scripts"]["ControlNet"]["args"][0]
+    assert serialized["enabled"] is True and serialized["image"] == "encoded"
+
+
+def test_controlnet_source_path():
+    unit = ControlNetUnit(source_mode="sourceLayer")
+    assert unit.source_mode == "sourceLayer"
+
+
+def test_controlnet_metadata_round_trip():
+    result = Automatic1111Result(
+        timestamp="2025-01-01T00:00:00Z", image_file_name="control.png", thumbnail_file_name="control.jpg",
+        document_id=1, request_id="control-request", seed=1, subseed=2, cfg_scale=7,
+        denoising_strength=None, prompt="p", negative_prompt="n",
+        controlnet={"enabled": True, "units": [{"model": "model", "module": "canny", "weight": .8}]},
+    )
+    parsed = Automatic1111Result.from_log_line(result.to_log_line())
+    assert parsed.controlnet["units"][0]["module"] == "canny"
+
+
+def test_controlnet_refresh_race():
+    first = Automatic1111Client.build_controlnet_alwayson_payload([])
+    second = Automatic1111Client.build_controlnet_alwayson_payload([
+        ControlNetUnit(enabled=True, input_image="newer")
+    ])
+    assert first is None and second["alwayson_scripts"]["ControlNet"]["args"][0]["image"] == "newer"
+
+
+def test_controlnet_unavailable_fallback():
+    status = Automatic1111Client().get_controlnet_status()
+    assert status["available"] is False
+    assert status["models"] == [] and status["modules"] == []
+
+
 def run(label, function):
     try:
         function()
@@ -581,6 +640,14 @@ def main():
         ("32 History sampler/steps across remount", test_history_reuse_sampler_steps_remount),
         ("33 LoRA refresh race", test_lora_refresh_race),
         ("34 LoRA selection reconciliation", test_lora_selection_reconciliation),
+        ("35 ControlNet availability/inventory", test_controlnet_availability_inventory),
+        ("36 ControlNet settings persistence", test_controlnet_settings_persistence),
+        ("37 ControlNet request disabled path", test_controlnet_request_disabled_path),
+        ("38 ControlNet request enabled payload", test_controlnet_request_enabled_payload),
+        ("39 Control image export/source path", test_controlnet_source_path),
+        ("40 ControlNet metadata round trip", test_controlnet_metadata_round_trip),
+        ("41 ControlNet refresh race", test_controlnet_refresh_race),
+        ("42 ControlNet unavailable fallback", test_controlnet_unavailable_fallback),
     ]
     passed = generation_available and all(run(label, function) for label, function in tests)
     print("PHASE 1 PHOTOSHOP REGRESSION: " + ("PASS" if passed else "FAIL"))

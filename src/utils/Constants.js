@@ -38,6 +38,15 @@ const DEFAULT_STABLE_DIFFUSION_SETTINGS = {
   selectionFeather: 5,
   selectionExpand: 0,
   restoreFaces: false,
+  controlNet: {
+    enabled: false,
+    model: "",
+    module: "canny",
+    weight: 1,
+    start: 0,
+    end: 1,
+    sourceMode: "sourceLayer",
+  },
 }
 
 const DEFAULT_UI_SETTINGS = {

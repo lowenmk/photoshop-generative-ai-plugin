@@ -216,6 +216,7 @@ const ResultItem = (
             <sp-body size="S">Size: {metadata?.generated_width && metadata?.generated_height ? `${metadata.generated_width} x ${metadata.generated_height}` : "Unknown"}</sp-body>
             <sp-body size="S">Mode: {metadata?.inference_type || "Unknown"}</sp-body>
             {metadata?.loras?.length ? <sp-body size="S">LoRA: {metadata.loras.map(lora => `${lora.name}:${lora.weight}`).join(", ")}</sp-body> : null}
+            {metadata?.controlnet?.enabled ? <sp-body size="S">ControlNet: {metadata.controlnet.units?.map(unit => `${unit.model || "model"} / ${unit.module || "module"} / ${unit.weight}`).join(", ")}</sp-body> : null}
             {metadata?.sampler_name ? <sp-action-button onClick={() => onSamplingMethodChange?.(metadata.sampler_name)}>Use sampler</sp-action-button> : null}
             {metadata?.sampling_steps ? <sp-action-button onClick={() => onSamplingStepsChange?.(metadata.sampling_steps)}>Use steps</sp-action-button> : null}
           </div> : null}

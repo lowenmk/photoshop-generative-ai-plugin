@@ -22,6 +22,7 @@ const {getRandomRequestId} = require("../../utils/utils");
 const {photoshopApp} = require("../../photoshop/PhotoshopApp");
 const {localServerApi} = require("../../api/localServerApi");
 const {getThumbnailSrc} = require("../../api/thumbnailCache");
+const {ControlNetControls} = require("./dream/ControlNetControls");
 
 const getSafeErrorMessage = (error) => {
   if (error?.message) {
@@ -160,6 +161,7 @@ export class DreamTabInternal extends React.Component {
       selectionInvert,
       selectionFeather,
       selectionExpand,
+      controlNet,
     } = this.state;
 
     await onBeforeDreamButtonClicked();
@@ -226,6 +228,8 @@ export class DreamTabInternal extends React.Component {
         ...img2imgOrInpaintingRequestPart,
         ...inpaintingRequestPart,
       }
+      const controlNetRequest = localServerApi.buildControlNetRequest(controlNet)
+      if (controlNetRequest) request.controlnet = controlNetRequest
       if (inpaintingRequestPart.effective_selection_area) {
         request.selection_area = inpaintingRequestPart.effective_selection_area;
         delete request.effective_selection_area;
@@ -439,6 +443,7 @@ export class DreamTabInternal extends React.Component {
   onSelectionInvertChange = (selectionInvert) => this.setState({selectionInvert});
   onSelectionFeatherChange = (selectionFeather) => this.setState({selectionFeather});
   onSelectionExpandChange = (selectionExpand) => this.setState({selectionExpand});
+  onControlNetChange = (controlNet) => this.setState({controlNet});
 
   onRestoreFacesChange = (restoreFaces) => {
     this.setState({ restoreFaces }, this.notifyModelSettingsChange);
@@ -474,6 +479,7 @@ export class DreamTabInternal extends React.Component {
       selectionInvert,
       selectionFeather,
       selectionExpand,
+      controlNet,
       restoreFaces,
       isAdvancedOptionsExpanded,
       showTxt2ImgInstructions,
@@ -570,6 +576,12 @@ export class DreamTabInternal extends React.Component {
             onSelectionInvertChange={this.onSelectionInvertChange}
             onSelectionFeatherChange={this.onSelectionFeatherChange}
             onSelectionExpandChange={this.onSelectionExpandChange}
+          />
+          <ControlNetControls
+            inferenceType={inferenceType}
+            sourceLayer={sourceLayer}
+            value={controlNet}
+            onChange={this.onControlNetChange}
           />
           </div>
 

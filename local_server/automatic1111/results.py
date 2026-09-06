@@ -28,6 +28,7 @@ class Automatic1111Result(BaseModel):
     generated_height: Optional[int] = None
     inference_type: Optional[str] = None
     loras: List[dict] = []
+    controlnet: Optional[dict] = None
 
     def to_log_line(self) -> str:
         metadata = json.dumps({
@@ -39,6 +40,7 @@ class Automatic1111Result(BaseModel):
             "generated_height": self.generated_height,
             "inference_type": self.inference_type,
             "loras": self.loras,
+            "controlnet": self.controlnet,
         }, separators=(",", ":"))
         return f"{self.timestamp}\t{self.image_file_name}\t{self.thumbnail_file_name}\t" \
                f"{self.document_id}\t{self.request_id}\t" \
@@ -82,6 +84,7 @@ class Automatic1111Result(BaseModel):
             generated_height=metadata.get("generated_height"),
             inference_type=metadata.get("inference_type"),
             loras=metadata.get("loras") or [],
+            controlnet=metadata.get("controlnet"),
         )
 
 
@@ -109,3 +112,4 @@ class Automatic1111ResultGroup(BaseModel):
     generated_height: Optional[int] = None
     inference_type: Optional[str] = None
     loras: List[dict] = []
+    controlnet: Optional[dict] = None

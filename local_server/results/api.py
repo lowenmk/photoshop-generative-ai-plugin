@@ -76,6 +76,7 @@ def get_all_results():
             generated_height=result_group[0].generated_height,
             inference_type=result_group[0].inference_type,
             loras=result_group[0].loras,
+            controlnet=result_group[0].controlnet,
             group_items=sorted(list(map(
                 lambda result: Automatic1111ResultGroupItem(
                     image_file_name=result.image_file_name,

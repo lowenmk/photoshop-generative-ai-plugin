@@ -91,6 +91,27 @@
     margin-top: 12px;
 }
 
+.controlNetPanel {
+  width: 100%;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--uxp-host-border-color, #555);
+}
+
+.controlNetHeader {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.controlNetRange {
+  gap: 8px;
+}
+
+.controlNetRange > sp-slider {
+  flex: 1 1 50%;
+  min-width: 0;
+}
+
 .advancedZone {
     margin-top: 10px;
 }

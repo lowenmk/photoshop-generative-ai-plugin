@@ -10,7 +10,8 @@ from automatic1111.image_generation_service import image_generation_service
 from automatic1111.models import Automatic1111CheckProgressResponse, Automatic1111GenerateTxt2ImgRequest, \
     Automatic1111GenerateImg2ImgRequest, Automatic1111GenerateInpaintRequest, Automatic1111GetModelsResponse, \
     SelectionArea, Automatic1111ChangeCurrentModelResponse, \
-    Automatic1111GetSamplersResponse, Automatic1111BatchGenerateImageRequest, Automatic1111StatusResponse
+    Automatic1111GetSamplersResponse, Automatic1111BatchGenerateImageRequest, Automatic1111StatusResponse, \
+    Automatic1111ControlNetStatusResponse
 from automatic1111.run_configuration_provider import run_configuration_provider
 from utils.constants import OUTPUT_FOLDER_PATH
 from utils.image_utils import extract_image_from_selection_and_scale, convert_mask_image, get_scale_factor, \
@@ -71,6 +72,28 @@ def get_loras():
 def refresh_loras():
     automatic1111_client.refresh_loras()
     return {"loras": automatic1111_client.get_loras()}
+
+
+@router.get("/sd/automatic1111/controlnet/status")
+def get_controlnet_status() -> Automatic1111ControlNetStatusResponse:
+    return Automatic1111ControlNetStatusResponse(**automatic1111_client.get_controlnet_status())
+
+
+@router.get("/sd/automatic1111/controlnet/models")
+def get_controlnet_models():
+    status = automatic1111_client.get_controlnet_status()
+    return {"available": status["available"], "models": status["models"], "reason": status.get("reason")}
+
+
+@router.get("/sd/automatic1111/controlnet/modules")
+def get_controlnet_modules():
+    status = automatic1111_client.get_controlnet_status()
+    return {"available": status["available"], "modules": status["modules"], "reason": status.get("reason")}
+
+
+@router.post("/sd/automatic1111/controlnet/refresh")
+def refresh_controlnet() -> Automatic1111ControlNetStatusResponse:
+    return Automatic1111ControlNetStatusResponse(**automatic1111_client.refresh_controlnet())
 
 
 @router.post("/sd/automatic1111/generate/stop")

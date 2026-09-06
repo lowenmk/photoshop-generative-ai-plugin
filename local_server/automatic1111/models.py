@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 
 from pydantic import BaseModel
 
@@ -23,6 +23,24 @@ class ImageSize(BaseModel):
     height: int
 
 
+class ControlNetUnit(BaseModel):
+    enabled: bool = False
+    model: Optional[str] = None
+    module: Optional[str] = None
+    weight: float = 1.0
+    guidance_start: float = 0.0
+    guidance_end: float = 1.0
+    control_mode: Optional[str] = None
+    resize_mode: Optional[str] = None
+    source_mode: Optional[str] = None
+    input_image: Optional[str] = None
+
+
+class Automatic1111ControlNetRequest(BaseModel):
+    enabled: bool = False
+    units: List[ControlNetUnit] = []
+
+
 class BaseAutomatic1111GenerateImageRequest(BaseModel):
     request_id: str
     document_id: int
@@ -38,6 +56,7 @@ class BaseAutomatic1111GenerateImageRequest(BaseModel):
     restore_faces: bool
     selection_area: Optional[SelectionArea]
     inference_type: Optional[str] = None
+    controlnet: Optional[Automatic1111ControlNetRequest] = None
 
 
 class Automatic1111GenerateTxt2ImgRequest(BaseAutomatic1111GenerateImageRequest):
@@ -131,6 +150,14 @@ class Automatic1111Lora(BaseModel):
 
 class Automatic1111GetLorasResponse(BaseModel):
     loras: List[Automatic1111Lora]
+
+
+class Automatic1111ControlNetStatusResponse(BaseModel):
+    available: bool
+    version: Optional[str] = None
+    models: List[str] = []
+    modules: List[str] = []
+    reason: Optional[str] = None
 
 
 class Automatic1111ChangeCurrentModelResponse(BaseModel):
