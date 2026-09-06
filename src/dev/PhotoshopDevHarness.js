@@ -223,9 +223,9 @@ class PhotoshopDevHarness {
     let generationError = null;
     const dreamTab = new DreamTabInternal({
       sourceLayer: {_id: sourceLayer._id},
-      requestIdPrefix: HARNESS_REQUEST_PREFIX.slice(0, -1),
-      seed: -1,
-      cfgScale: DEFAULT_CFG_SCALE,
+        requestIdPrefix: HARNESS_REQUEST_PREFIX.slice(0, -1),
+        seed: payload.seed === undefined ? -1 : Number(payload.seed),
+        cfgScale: payload.cfg_scale === undefined ? DEFAULT_CFG_SCALE : Number(payload.cfg_scale),
       denoisingStrength: DEFAULT_DENOISING_STRENGTH,
       onProgress: () => {},
       onBeforeDreamButtonClicked: async () => {},
