@@ -31,7 +31,7 @@ class LocalServerApi {
         return await ajaxClient.get("/sd/automatic1111/controlnet/status")
       } catch (error) {
         if (error?.status === 404) {
-          return {available: false, version: null, models: [], modules: [], reason: "ControlNet unavailable"}
+          return {available: false, version: null, models: [], modules: [], reason: "ControlNet extension is not installed or its API is disabled"}
         }
         throw error
       }
@@ -173,6 +173,20 @@ class LocalServerApi {
 
   refreshControlNet = async () => {
     return this.controlNetCache.refresh()
+  }
+
+  installControlNet = async (automatic1111Root, replaceExisting = false) => {
+    return ajaxClient.post("/sd/automatic1111/controlnet/install", {
+      automatic1111_root: automatic1111Root,
+      replace_existing: replaceExisting,
+    })
+  }
+
+  installControlNet = async (automatic1111Root, replaceExisting = false) => {
+    return ajaxClient.post("/sd/automatic1111/controlnet/install", {
+      automatic1111_root: automatic1111Root,
+      replace_existing: replaceExisting,
+    })
   }
 
   enqueueTxt2ImgRequest = async (request) => {

@@ -103,6 +103,15 @@
   align-items: center;
 }
 
+.controlNetInstallLink {
+  align-self: flex-start;
+  min-height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--uxp-host-link-text-color);
+}
+
 .controlNetRange {
   gap: 8px;
 }

@@ -23,6 +23,7 @@ const {photoshopApp} = require("../../photoshop/PhotoshopApp");
 const {localServerApi} = require("../../api/localServerApi");
 const {getThumbnailSrc} = require("../../api/thumbnailCache");
 const {ControlNetControls} = require("./dream/ControlNetControls");
+const {ModalName} = require("../modals/FullScreenModalSelector");
 
 const getSafeErrorMessage = (error) => {
   if (error?.message) {
@@ -598,6 +599,7 @@ export class DreamTabInternal extends React.Component {
             sourceLayer={sourceLayer}
             value={controlNet}
             onChange={this.onControlNetChange}
+            onInstall={() => this.props.modalContext.setModal({modalName: ModalName.CONTROLNET_INSTALL})}
           />
           </div>
 

@@ -11,8 +11,9 @@ from automatic1111.models import Automatic1111CheckProgressResponse, Automatic11
     Automatic1111GenerateImg2ImgRequest, Automatic1111GenerateInpaintRequest, Automatic1111GetModelsResponse, \
     SelectionArea, Automatic1111ChangeCurrentModelResponse, \
     Automatic1111GetSamplersResponse, Automatic1111BatchGenerateImageRequest, Automatic1111StatusResponse, \
-    Automatic1111ControlNetStatusResponse
+    Automatic1111ControlNetStatusResponse, ControlNetInstallRequest
 from automatic1111.run_configuration_provider import run_configuration_provider
+from automatic1111.controlnet_installer import install_controlnet
 from utils.constants import OUTPUT_FOLDER_PATH
 from utils.image_utils import extract_image_from_selection_and_scale, convert_mask_image, get_scale_factor, \
     read_image_as_full_sized_layer, adjust_selection_area
@@ -108,6 +109,28 @@ def get_controlnet_modules():
 @router.post("/sd/automatic1111/controlnet/refresh")
 def refresh_controlnet() -> Automatic1111ControlNetStatusResponse:
     return Automatic1111ControlNetStatusResponse(**automatic1111_client.refresh_controlnet())
+
+
+@router.post("/sd/automatic1111/controlnet/install")
+def install_controlnet_extension(request: ControlNetInstallRequest):
+    try:
+        return install_controlnet(request.automatic1111_root, request.replace_existing)
+    except ValueError as error:
+        return {"status": "invalid", "message": str(error)}
+    except OSError as error:
+        return {"status": "error", "message": f"ControlNet installation failed: {error}"}
+    except RuntimeError as error:
+        return {"status": "error", "message": str(error)}
+
+
+@router.post("/sd/automatic1111/controlnet/install")
+def install_controlnet_extension(request: ControlNetInstallRequest):
+    try:
+        return install_controlnet(request.automatic1111_root, request.replace_existing)
+    except ValueError as error:
+        return {"status": "invalid", "message": str(error)}
+    except OSError as error:
+        return {"status": "error", "message": f"ControlNet installation failed: {error}"}
 
 
 @router.post("/sd/automatic1111/generate/stop")

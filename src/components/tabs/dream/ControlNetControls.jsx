@@ -3,7 +3,7 @@ import {localServerApi} from "../../../api/localServerApi";
 import {trueOrUndefined} from "../../../utils/utils";
 import "../DreamTab.css";
 
-export const ControlNetControls = ({inferenceType, sourceLayer, value, onChange}) => {
+export const ControlNetControls = ({inferenceType, sourceLayer, value, onChange, onInstall}) => {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const settings = value || {enabled: false, model: "", module: "canny", weight: 1, start: 0, end: 1};
@@ -24,27 +24,31 @@ export const ControlNetControls = ({inferenceType, sourceLayer, value, onChange}
 
   const update = changes => onChange({...settings, ...changes});
   const unavailable = loading || !status?.available;
+  const notInstalled = !loading && !status?.available && status?.reason?.toLowerCase().includes("not installed");
   const generationNeedsSource = inferenceType === "txt2img" && !sourceLayer;
 
   return (
     <div className="controlNetPanel">
       <div className="container flexRow controlNetHeader">
         <sp-label class="zoneLabel">CONTROLNET</sp-label>
-        <sp-action-button class="tertiaryAction" title="Refresh ControlNet inventory" onClick={() => loadStatus(true)}>Refresh</sp-action-button>
+        {!notInstalled ? <sp-action-button class="tertiaryAction" title="Refresh ControlNet inventory" onClick={() => loadStatus(true)}>Refresh</sp-action-button> : null}
       </div>
-      {!loading && !status?.available ? (
-        <sp-help-text>Unavailable: {status?.reason || "ControlNet extension not detected"}</sp-help-text>
+      {notInstalled ? (
+        <sp-action-button class="controlNetInstallLink" onClick={onInstall}>install controlnet</sp-action-button>
       ) : null}
-      <div className="container flexColumn">
-        <sp-checkbox
-          checked={trueOrUndefined(settings.enabled && !unavailable && !generationNeedsSource)}
-          disabled={trueOrUndefined(unavailable || generationNeedsSource)}
-          onClick={() => update({enabled: !settings.enabled})}
-        >Enable ControlNet</sp-checkbox>
-        {generationNeedsSource ? <sp-help-text>Choose a source layer for ControlNet input.</sp-help-text> : null}
-      </div>
+      {!loading && !status?.available && !notInstalled ? (
+        <sp-help-text>Unavailable: {status?.reason || "ControlNet extension unavailable"}</sp-help-text>
+      ) : null}
       {!unavailable ? (
         <>
+          <div className="container flexColumn">
+            <sp-checkbox
+              checked={trueOrUndefined(settings.enabled && !generationNeedsSource)}
+              disabled={trueOrUndefined(generationNeedsSource)}
+              onClick={() => update({enabled: !settings.enabled})}
+            >Enable ControlNet</sp-checkbox>
+            {generationNeedsSource ? <sp-help-text>Choose a source layer for ControlNet input.</sp-help-text> : null}
+          </div>
           <sp-picker class="modelDropdown" disabled={trueOrUndefined(!settings.enabled)}>
             <sp-label slot="label">Model</sp-label>
             <sp-menu slot="options" onClick={e => update({model: e.target.value})}>

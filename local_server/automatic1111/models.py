@@ -164,5 +164,15 @@ class Automatic1111ControlNetStatusResponse(BaseModel):
     reason: Optional[str] = None
 
 
+class ControlNetInstallRequest(BaseModel):
+    automatic1111_root: str
+    replace_existing: bool = False
+
+
+class ControlNetInstallRequest(BaseModel):
+    automatic1111_root: str
+    replace_existing: bool = False
+
+
 class Automatic1111ChangeCurrentModelResponse(BaseModel):
     model_hash: str
