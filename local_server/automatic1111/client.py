@@ -91,6 +91,12 @@ class Automatic1111ClientCheckProgressResponse(BaseModel):
 
 class Automatic1111Client:
     @staticmethod
+    def _normalize_controlnet_version(version):
+        if isinstance(version, dict) and "version" in version:
+            return str(version["version"])
+        return version if isinstance(version, str) else str(version)
+
+    @staticmethod
     def build_controlnet_alwayson_payload(units: Optional[List[ControlNetUnit]]):
         enabled_units = [unit for unit in (units or []) if unit.enabled]
         if not enabled_units:
@@ -286,7 +292,7 @@ class Automatic1111Client:
                 return {"available": False, "version": None, "models": [], "modules": [],
                         "reason": "ControlNet extension is not installed or its API is disabled"}
             version_response.raise_for_status()
-            version = version_response.json()
+            version = self._normalize_controlnet_version(version_response.json())
             models_response = requests.get(f"{base_url}{CONTROLNET_MODELS_PATH}")
             modules_response = requests.get(f"{base_url}{CONTROLNET_MODULES_PATH}")
             models_response.raise_for_status()
@@ -295,7 +301,7 @@ class Automatic1111Client:
             modules = modules_response.json().get("module_list", modules_response.json())
             if not isinstance(models, list) or not isinstance(modules, list):
                 raise ValueError("ControlNet inventory response must contain lists")
-            return {"available": True, "version": version if isinstance(version, str) else str(version),
+            return {"available": True, "version": version,
                     "models": models, "modules": modules}
         except requests.exceptions.ConnectionError:
             raise self._bad_connection_error()
