@@ -91,6 +91,17 @@ class Automatic1111ClientCheckProgressResponse(BaseModel):
 
 class Automatic1111Client:
     @staticmethod
+    def _is_known_nan_response(raw_response) -> bool:
+        if getattr(raw_response, "status_code", 200) < 500:
+            return False
+        try:
+            body = raw_response.json()
+        except (ValueError, TypeError):
+            body = getattr(raw_response, "text", "")
+        body_text = body if isinstance(body, str) else json.dumps(body)
+        return "NansException" in body_text and "tensor with NaNs" in body_text
+
+    @staticmethod
     def _normalize_controlnet_version(version):
         if isinstance(version, dict) and "version" in version:
             return str(version["version"])
@@ -429,12 +440,21 @@ class Automatic1111Client:
             if controlnet_payload:
                 client_request.update(controlnet_payload)
             url = self._get_generate_image_automatic1111_url(has_init_images=has_init_images)
-            print(f"Making request to {url}", self._request_without_images(client_request))
-            raw_response = requests.post(
-                url,
-                json=self._request_without_none_values(client_request),
-            )
+            request_payload = self._request_without_none_values(client_request)
+            print(f"Making request to {url}", self._request_without_images(request_payload))
+            raw_response = requests.post(url, json=request_payload)
+            retried_known_nan = False
+            if self._is_known_nan_response(raw_response):
+                retried_known_nan = True
+                print("First generation after checkpoint load produced A1111 NaN; retrying once.")
+                raw_response = requests.post(url, json=request_payload)
             response = raw_response.json()
+            if getattr(raw_response, "status_code", 200) >= 400:
+                if retried_known_nan:
+                    print("A1111 NaN retry failed.")
+                raw_response.raise_for_status()
+            if retried_known_nan:
+                print("A1111 NaN retry succeeded.")
             print(f"Got response from {url}", self._response_without_images(response))
             response_info = json.loads(response["info"])
             return Automatic1111ClientGenerateImageResponse(
