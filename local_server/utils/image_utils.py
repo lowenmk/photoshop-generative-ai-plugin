@@ -115,7 +115,11 @@ def extract_image_from_selection_and_scale(
 # TODO: merge this method with the above one
 def get_scale_factor(selection_area: SelectionArea) -> Tuple[int, int, float]:
     """
-    This method find smaller dimension of the selection area and returns a scale factor that would convert it to 512
+    Return block-aligned inference dimensions and the nominal uniform scale.
+
+    For an original edge smaller than BLOCK_SIZE, minimum block alignment necessarily
+    makes that axis use a different effective scale. Paste-back therefore uses the
+    original selection dimensions rather than deriving both axes from this scalar.
     """
     selection_width = selection_area.width
     selection_height = selection_area.height
@@ -135,8 +139,14 @@ def get_scale_factor(selection_area: SelectionArea) -> Tuple[int, int, float]:
 
     # TODO: Do we need the division by BLOCK_SIZE at all? Does it impact the results? It's taken from the automatic1111
     # UI but maybe it's there just for UX? Do we need to maintain this compatibility?
-    scaled_width_crop = (scaled_width // BLOCK_SIZE) * BLOCK_SIZE
-    scaled_height_crop = (scaled_height // BLOCK_SIZE) * BLOCK_SIZE
+    scaled_width_crop = min(
+        MAX_DIMENSION,
+        max(BLOCK_SIZE, (scaled_width // BLOCK_SIZE) * BLOCK_SIZE),
+    )
+    scaled_height_crop = min(
+        MAX_DIMENSION,
+        max(BLOCK_SIZE, (scaled_height // BLOCK_SIZE) * BLOCK_SIZE),
+    )
     return scaled_width_crop, scaled_height_crop, scale_factor
 
 
@@ -156,15 +166,13 @@ def paste_image_onto_selection_in_new_image(
     new_image = np.zeros((document_height, document_width, 4), dtype=np.uint8)
 
     if scale_factor is not None:
-        # Inverted scale factor to paste the image back in case of img2img
-        new_scale_factor = 1. / scale_factor
-        scaled_height = round(image_to_paste.shape[0] * new_scale_factor)
-        scaled_width = round(image_to_paste.shape[1] * new_scale_factor)
+        # Block alignment and the 8px minimum can make the effective X and Y
+        # scales differ. The original selection is authoritative for paste-back.
+        scaled_width = selection_area.width
+        scaled_height = selection_area.height
         maybe_scaled_image = cv2.resize(
             image_to_paste,
             dsize=[scaled_width, scaled_height],
-            fx=new_scale_factor,
-            fy=new_scale_factor,
             interpolation=cv2.INTER_CUBIC,
         )
     else:
