@@ -7,6 +7,7 @@ const FAILURE_POINTS = new Set([
   "before_result_duplicate",
   "after_group_create",
   "before_group_move",
+  "during_model_settings_round_trip",
 ]);
 
 let activeFailurePoint = null;

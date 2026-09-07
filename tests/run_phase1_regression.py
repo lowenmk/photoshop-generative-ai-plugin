@@ -604,6 +604,28 @@ def test_controlnet_unavailable_fallback():
     assert status["models"] == [] and status["modules"] == []
 
 
+def test_dream_settings_isolation_pass_path():
+    result = call("POST", "/test/model-settings-isolation", json={"forceFailure": False}, request_timeout=180)
+    if result.get("skippedRoundTrip"):
+        raise SkipRegressionTest("Per-model settings round trip was skipped (not enough models/samplers)")
+    assert result["roundTripThrew"] is False, result
+    assert result["dreamSettingsIsolationHeld"] is True, (
+        f"DREAM_TAB_SETTINGS leaked on the pass path: seeded={result['seededDreamSettings']} "
+        f"after={result['afterDreamSettings']}"
+    )
+    assert result["modelSettingsIsolationHeld"] is True, "MODEL_SETTINGS store was mutated beyond modelA/modelB"
+
+
+def test_dream_settings_isolation_failure_path():
+    result = call("POST", "/test/model-settings-isolation", json={"forceFailure": True}, request_timeout=180)
+    assert result["roundTripThrew"] is True, "Expected the injected failure point to abort the round trip"
+    assert result["dreamSettingsIsolationHeld"] is True, (
+        f"DREAM_TAB_SETTINGS leaked on the forced-failure path: seeded={result['seededDreamSettings']} "
+        f"after={result['afterDreamSettings']}"
+    )
+    assert result["modelSettingsIsolationHeld"] is True, "MODEL_SETTINGS store was mutated beyond modelA/modelB"
+
+
 def run(label, function):
     try:
         function()
@@ -658,6 +680,8 @@ def main():
         ("40 ControlNet metadata round trip", test_controlnet_metadata_round_trip),
         ("41 ControlNet refresh race", test_controlnet_refresh_race),
         ("42 ControlNet unavailable fallback", test_controlnet_unavailable_fallback),
+        ("43 Dream settings isolation (pass path)", test_dream_settings_isolation_pass_path),
+        ("44 Dream settings isolation (forced failure path)", test_dream_settings_isolation_failure_path),
     ]
     passed = generation_available and all(run(label, function) for label, function in tests)
     print("PHASE 1 PHOTOSHOP REGRESSION: " + ("PASS" if passed else "FAIL"))

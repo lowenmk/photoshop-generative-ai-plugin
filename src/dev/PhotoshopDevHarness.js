@@ -14,7 +14,7 @@ const {
 const {localServerApi} = require("../api/localServerApi");
 const {settingsStorage} = require("../utils/SettingsStorage");
 const {getActiveMainPanelInstance} = require("../panels/MainPanel");
-const {setFailurePoint, clearFailurePoint} = require("./DevFailureInjector");
+const {setFailurePoint, clearFailurePoint, throwIfFailurePoint} = require("./DevFailureInjector");
 const {buildLoraToken, insertLoraToken} = require("../utils/promptUtils");
 const {reconcileLoraSelection} = require("../utils/loraUtils");
 const {createLoraCache} = require("../api/loraCache");
@@ -321,6 +321,13 @@ class PhotoshopDevHarness {
     if (samplers.length < 2) return {skipped: true, reason: "Fewer than two samplers are available"};
     const originalHash = modelA.modelHash;
     const originalSettings = panel.getCurrentModelSettings();
+    // DreamTab mirrors maskBlur/maskedContent/restoreFaces/samplingMethod/samplingSteps into its
+    // own component state whenever the modelSettings prop changes (see DreamTab.componentDidUpdate),
+    // and persists that state to DREAM_TAB_SETTINGS independently of any MODEL_SETTINGS profile.
+    // Applying settingsA/settingsB below therefore mutates DREAM_TAB_SETTINGS as a side effect, so it
+    // must be snapshotted here and hard-restored in the outermost finally below, regardless of how
+    // this function exits.
+    const originalDreamSettings = settingsStorage.getDreamSettings();
     const originalProfiles = {
       [modelA.modelHash]: settingsStorage.hasModelSettings(modelA.modelHash)
         ? settingsStorage.getModelSettings(modelA.modelHash) : null,
@@ -346,6 +353,7 @@ class PhotoshopDevHarness {
       await panel.onModelChangeRequested(modelB.modelHash);
       panel.applyModelSettings(settingsB);
       await waitForState();
+      throwIfFailurePoint("during_model_settings_round_trip");
       await panel.onModelChangeRequested(modelA.modelHash);
       await waitForState();
       const restoredA = panel.getCurrentModelSettings();
@@ -363,17 +371,142 @@ class PhotoshopDevHarness {
         restoredA: true, restoredB: true, refreshPreservedActiveModel: true, reloadPreservedSettings: true};
     } finally {
       try {
-        if (panel.state.activeModelHash !== originalHash) await panel.onModelChangeRequested(originalHash);
-        panel.applyModelSettings(originalSettings);
-        await waitForState();
-      } finally {
-        for (const model of [modelA, modelB]) {
-          const profile = originalProfiles[model.modelHash];
-          if (profile) settingsStorage.saveModelSettings(model.modelHash, profile);
-          else settingsStorage.removeModelSettings(model.modelHash);
+        try {
+          if (panel.state.activeModelHash !== originalHash) await panel.onModelChangeRequested(originalHash);
+          panel.applyModelSettings(originalSettings);
+          await waitForState();
+        } finally {
+          for (const model of [modelA, modelB]) {
+            const profile = originalProfiles[model.modelHash];
+            if (profile) settingsStorage.saveModelSettings(model.modelHash, profile);
+            else settingsStorage.removeModelSettings(model.modelHash);
+          }
         }
+      } finally {
+        // Hard, unconditional restore that does not depend on React prop-diffing or timing:
+        // whatever the in-memory restore attempts above did or didn't accomplish, DREAM_TAB_SETTINGS
+        // on disk must end up exactly as it was before this test ran. This is what actually closes
+        // the settings leak - the in-memory restore above is best-effort UI consistency, not a
+        // persistence guarantee.
+        settingsStorage.restoreDreamSettings(originalDreamSettings);
       }
     }
+  };
+
+  // Regression coverage for the settings leak fixed above: seeds DREAM_TAB_SETTINGS with
+  // sentinel values that don't match any default or fixture value, snapshots the full
+  // MODEL_SETTINGS store, runs modelSettingsRoundTrip (optionally forcing it to throw
+  // mid-test via the "during_model_settings_round_trip" failure point), and confirms both
+  // persistent stores come back exactly as seeded/snapshotted - on the pass path and the
+  // forced-failure path alike.
+  modelSettingsIsolationCheck = async (payload = {}) => {
+    const forceFailure = Boolean(payload.forceFailure);
+    const DREAM_SETTINGS_ISOLATION_KEYS = ["maskBlur", "maskedContent", "restoreFaces", "samplingSteps", "samplingMethod"];
+
+    const originalDreamSettings = settingsStorage.getDreamSettings();
+    const sentinelDreamSettings = {
+      ...originalDreamSettings,
+      maskBlur: 41,
+      maskedContent: "latent nothing",
+      restoreFaces: false,
+      samplingSteps: 11,
+    };
+    settingsStorage.restoreDreamSettings(sentinelDreamSettings);
+    const seededDreamSettings = settingsStorage.getDreamSettings();
+    const modelSettingsBefore = settingsStorage.getAllModelSettingsRaw();
+
+    let roundTripResult = null;
+    let roundTripError = null;
+    if (forceFailure) setFailurePoint("during_model_settings_round_trip");
+    try {
+      roundTripResult = await this.modelSettingsRoundTrip();
+    } catch (error) {
+      roundTripError = error.message || String(error);
+    } finally {
+      clearFailurePoint();
+    }
+
+    const afterDreamSettings = settingsStorage.getDreamSettings();
+    const modelSettingsAfter = settingsStorage.getAllModelSettingsRaw();
+    const dreamSettingsIsolationHeld = DREAM_SETTINGS_ISOLATION_KEYS.every(
+      key => afterDreamSettings[key] === seededDreamSettings[key]
+    );
+    const modelSettingsIsolationHeld =
+      JSON.stringify(modelSettingsBefore) === JSON.stringify(modelSettingsAfter);
+
+    // Restore whatever DREAM_TAB_SETTINGS truly held before this isolation probe seeded its
+    // own sentinel, so the probe itself never leaves user settings contaminated either.
+    settingsStorage.restoreDreamSettings(originalDreamSettings);
+
+    if (forceFailure && roundTripError === null) {
+      throw new Error("Expected modelSettingsRoundTrip to throw via the injected failure point, but it did not");
+    }
+    if (!forceFailure && roundTripError !== null) {
+      throw new Error(`modelSettingsRoundTrip threw unexpectedly on the pass path: ${roundTripError}`);
+    }
+
+    return {
+      forceFailure,
+      skippedRoundTrip: !forceFailure && Boolean(roundTripResult?.skipped),
+      roundTripThrew: roundTripError !== null,
+      roundTripError,
+      dreamSettingsIsolationHeld,
+      modelSettingsIsolationHeld,
+      seededDreamSettings: DREAM_SETTINGS_ISOLATION_KEYS.reduce(
+        (acc, key) => ({...acc, [key]: seededDreamSettings[key]}), {}
+      ),
+      afterDreamSettings: DREAM_SETTINGS_ISOLATION_KEYS.reduce(
+        (acc, key) => ({...acc, [key]: afterDreamSettings[key]}), {}
+      ),
+    };
+  };
+
+  // TEMPORARY, ONE-TIME cleanup for PSHOP-098: resets the four DREAM_TAB_SETTINGS/MODEL_SETTINGS
+  // fields contaminated by the modelSettingsRoundTrip leak fixed above (maskedContent, maskBlur,
+  // restoreFaces, samplingSteps) back to safe values, leaving every other persisted field (prompt,
+  // seed, cfgScale, denoisingStrength, samplingMethod, maskSource, etc.) untouched. Not a migration:
+  // remove this method and its dispatch case once the local environment has been cleaned once.
+  oneTimeCleanupContaminatedDreamSettings = async () => {
+    const before = settingsStorage.getDreamSettings();
+    const after = {
+      ...before,
+      maskedContent: "original",
+      maskBlur: DEFAULT_DREAM_TAB_SETTINGS.maskBlur,
+      restoreFaces: DEFAULT_DREAM_TAB_SETTINGS.restoreFaces,
+      samplingSteps: DEFAULT_DREAM_TAB_SETTINGS.samplingSteps,
+    };
+    settingsStorage.restoreDreamSettings(after);
+
+    const allModelSettings = settingsStorage.getAllModelSettingsRaw();
+    const changedModelHashes = [];
+    for (const modelHash of Object.keys(allModelSettings)) {
+      const profile = allModelSettings[modelHash];
+      if (!profile || typeof profile !== "object") continue;
+      if (profile.maskedContent !== "latent noise" && profile.maskBlur !== 24 && profile.restoreFaces !== true) {
+        continue;
+      }
+      changedModelHashes.push(modelHash);
+      allModelSettings[modelHash] = {
+        ...profile,
+        maskedContent: "original",
+        maskBlur: DEFAULT_DREAM_TAB_SETTINGS.maskBlur,
+        restoreFaces: DEFAULT_DREAM_TAB_SETTINGS.restoreFaces,
+        samplingSteps: DEFAULT_DREAM_TAB_SETTINGS.samplingSteps,
+      };
+    }
+    settingsStorage.restoreAllModelSettingsRaw(allModelSettings);
+
+    return {
+      before: {
+        maskedContent: before.maskedContent, maskBlur: before.maskBlur,
+        restoreFaces: before.restoreFaces, samplingSteps: before.samplingSteps,
+      },
+      after: {
+        maskedContent: after.maskedContent, maskBlur: after.maskBlur,
+        restoreFaces: after.restoreFaces, samplingSteps: after.samplingSteps,
+      },
+      changedModelHashes,
+    };
   };
 
   loraPromptTokens = async () => ({
@@ -525,6 +658,8 @@ class PhotoshopDevHarness {
       case "generate_inpaint": return this.generate({...payload, inference_type: InferenceType.INPAINT});
       case "cleanup_result_batch": return this.cleanupResultBatch(payload);
       case "model_settings_round_trip": return this.modelSettingsRoundTrip();
+      case "model_settings_isolation_check": return this.modelSettingsIsolationCheck(payload);
+      case "one_time_cleanup_contaminated_dream_settings": return this.oneTimeCleanupContaminatedDreamSettings();
       case "lora_prompt_tokens": return this.loraPromptTokens();
       case "history_use_prompt_remount": return this.historyUsePromptRemount();
       case "history_reuse_sampler_steps_remount": return this.historyReuseSamplerStepsRemount();

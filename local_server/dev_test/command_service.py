@@ -16,6 +16,8 @@ ALLOWED_COMMAND_TYPES = {
     "generate_inpaint",
     "cleanup_result_batch",
     "model_settings_round_trip",
+    "model_settings_isolation_check",
+    "one_time_cleanup_contaminated_dream_settings",
     "lora_prompt_tokens",
     "history_use_prompt_remount",
     "history_reuse_sampler_steps_remount",

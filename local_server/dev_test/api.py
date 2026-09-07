@@ -135,6 +135,16 @@ async def model_settings():
     return await _run("model_settings_round_trip", {}, timeout_seconds=180)
 
 
+@router.post("/test/model-settings-isolation")
+async def model_settings_isolation(payload: dict = None):
+    return await _run("model_settings_isolation_check", payload or {}, timeout_seconds=180)
+
+
+@router.post("/test/one-time-cleanup-contaminated-dream-settings")
+async def one_time_cleanup_contaminated_dream_settings():
+    return await _run("one_time_cleanup_contaminated_dream_settings", {}, timeout_seconds=30)
+
+
 @router.post("/test/lora-prompt")
 async def lora_prompt():
     return await _run("lora_prompt_tokens", {})

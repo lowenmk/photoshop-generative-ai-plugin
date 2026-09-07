@@ -65,6 +65,17 @@ class SettingsStorage {
     }
   }
 
+  // Hard, synchronous restore of DREAM_TAB_SETTINGS that also discards any pending batched
+  // write. Callers that must guarantee persisted state is restored (e.g. dev-harness test
+  // cleanup) cannot rely on saveDreamSettingsBatched, because the pending write it queues is
+  // only flushed on the next interval tick and would otherwise clobber this restore with
+  // stale, still-queued values.
+  restoreDreamSettings(settings) {
+    this.dreamSettingsPendingWrite = {};
+    console.log('Restoring Dream settings', JSON.stringify(settings, null, 2))
+    localStorage.setItem(DREAM_TAB_SETTINGS_KEY, JSON.stringify(settings));
+  }
+
   writePendingDreamSettingsToLocalStorage = () => {
     // Batching settings writes is good because otherwise we will write them e.g. with every button press when user
     // types the prompt
@@ -147,6 +158,25 @@ class SettingsStorage {
     }
     console.log('Saving main panel settings', JSON.stringify(updatedSettings, null, 2))
     localStorage.setItem(MAIN_PANEL_SETTINGS_KEY, JSON.stringify(updatedSettings));
+  }
+
+  // Raw MODEL_SETTINGS store (all profiles, unmerged with defaults) for whole-store snapshot
+  // and restore, e.g. dev-harness test isolation checks that must prove no profile - known
+  // or not - was left contaminated by a test run.
+  getAllModelSettingsRaw() {
+    const storedSettings = localStorage.getItem(MODEL_SETTINGS_KEY);
+    if (!storedSettings) return {};
+    try {
+      const parsed = JSON.parse(storedSettings);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (e) {
+      console.error("Failed to parse model settings", storedSettings);
+      return {};
+    }
+  }
+
+  restoreAllModelSettingsRaw(allModelSettings) {
+    localStorage.setItem(MODEL_SETTINGS_KEY, JSON.stringify(allModelSettings || {}));
   }
 
   getModelSettings(modelHash) {
