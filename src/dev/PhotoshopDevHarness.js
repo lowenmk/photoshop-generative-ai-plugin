@@ -14,7 +14,7 @@ const {
 const {localServerApi} = require("../api/localServerApi");
 const {settingsStorage} = require("../utils/SettingsStorage");
 const {getActiveMainPanelInstance} = require("../panels/MainPanel");
-const {setFailurePoint, clearFailurePoint} = require("./DevFailureInjector");
+const {setFailurePoint, clearFailurePoint, throwIfFailurePoint} = require("./DevFailureInjector");
 const {buildLoraToken, insertLoraToken} = require("../utils/promptUtils");
 const {reconcileLoraSelection} = require("../utils/loraUtils");
 const {createLoraCache} = require("../api/loraCache");
@@ -321,6 +321,8 @@ class PhotoshopDevHarness {
     if (samplers.length < 2) return {skipped: true, reason: "Fewer than two samplers are available"};
     const originalHash = modelA.modelHash;
     const originalSettings = panel.getCurrentModelSettings();
+    const originalDreamSettingsRaw = settingsStorage.snapshotDreamSettingsRaw();
+    const originalModelSettingsRaw = settingsStorage.snapshotModelSettingsRaw();
     const originalProfiles = {
       [modelA.modelHash]: settingsStorage.hasModelSettings(modelA.modelHash)
         ? settingsStorage.getModelSettings(modelA.modelHash) : null,
@@ -338,41 +340,87 @@ class PhotoshopDevHarness {
     const waitForState = () => new Promise(resolve => setTimeout(resolve, 100));
     const sameSettings = (left, right) => Object.keys(settingsA).every(key => left[key] === right[key]);
     try {
-      if (panel.state.activeModelHash !== modelA.modelHash) {
-        await panel.onModelChangeRequested(modelA.modelHash);
-      }
-      panel.applyModelSettings(settingsA);
-      await waitForState();
-      await panel.onModelChangeRequested(modelB.modelHash);
-      panel.applyModelSettings(settingsB);
-      await waitForState();
-      await panel.onModelChangeRequested(modelA.modelHash);
-      await waitForState();
-      const restoredA = panel.getCurrentModelSettings();
-      if (!sameSettings(restoredA, settingsA)) throw new Error("Model A settings were not restored");
-      await panel.onModelChangeRequested(modelB.modelHash);
-      await waitForState();
-      const restoredB = panel.getCurrentModelSettings();
-      if (!sameSettings(restoredB, settingsB)) throw new Error("Model B settings were not restored");
-      const refreshedModels = await localServerApi.refreshAvailableModels();
-      const refreshedActive = refreshedModels.find(model => model.isModelActive)?.modelHash;
-      if (refreshedActive !== modelB.modelHash) throw new Error("Model refresh changed the active model unexpectedly");
-      const reloadSettings = settingsStorage.getModelSettings(modelB.modelHash);
-      if (!sameSettings(reloadSettings, settingsB)) throw new Error("Model settings did not survive reload read");
-      return {skipped: false, modelA: modelA.modelHash, modelB: modelB.modelHash,
-        restoredA: true, restoredB: true, refreshPreservedActiveModel: true, reloadPreservedSettings: true};
-    } finally {
       try {
-        if (panel.state.activeModelHash !== originalHash) await panel.onModelChangeRequested(originalHash);
-        panel.applyModelSettings(originalSettings);
+        if (panel.state.activeModelHash !== modelA.modelHash) {
+          await panel.onModelChangeRequested(modelA.modelHash);
+        }
+        panel.applyModelSettings(settingsA);
         await waitForState();
+        await panel.onModelChangeRequested(modelB.modelHash);
+        panel.applyModelSettings(settingsB);
+        await waitForState();
+        throwIfFailurePoint("during_model_settings_round_trip");
+        await panel.onModelChangeRequested(modelA.modelHash);
+        await waitForState();
+        const restoredA = panel.getCurrentModelSettings();
+        if (!sameSettings(restoredA, settingsA)) throw new Error("Model A settings were not restored");
+        await panel.onModelChangeRequested(modelB.modelHash);
+        await waitForState();
+        const restoredB = panel.getCurrentModelSettings();
+        if (!sameSettings(restoredB, settingsB)) throw new Error("Model B settings were not restored");
+        const refreshedModels = await localServerApi.refreshAvailableModels();
+        const refreshedActive = refreshedModels.find(model => model.isModelActive)?.modelHash;
+        if (refreshedActive !== modelB.modelHash) throw new Error("Model refresh changed the active model unexpectedly");
+        const reloadSettings = settingsStorage.getModelSettings(modelB.modelHash);
+        if (!sameSettings(reloadSettings, settingsB)) throw new Error("Model settings did not survive reload read");
+        return {skipped: false, modelA: modelA.modelHash, modelB: modelB.modelHash,
+          restoredA: true, restoredB: true, refreshPreservedActiveModel: true, reloadPreservedSettings: true};
       } finally {
-        for (const model of [modelA, modelB]) {
-          const profile = originalProfiles[model.modelHash];
-          if (profile) settingsStorage.saveModelSettings(model.modelHash, profile);
-          else settingsStorage.removeModelSettings(model.modelHash);
+        try {
+          if (panel.state.activeModelHash !== originalHash) await panel.onModelChangeRequested(originalHash);
+          panel.applyModelSettings(originalSettings);
+          await waitForState();
+        } finally {
+          for (const model of [modelA, modelB]) {
+            const profile = originalProfiles[model.modelHash];
+            if (profile) settingsStorage.saveModelSettings(model.modelHash, profile);
+            else settingsStorage.removeModelSettings(model.modelHash);
+          }
         }
       }
+    } finally {
+      settingsStorage.restoreDreamSettingsRaw(originalDreamSettingsRaw);
+      settingsStorage.restoreModelSettingsRaw(originalModelSettingsRaw);
+    }
+  };
+
+  modelSettingsIsolationCheck = async (payload = {}) => {
+    const absentKeys = Boolean(payload.absentKeys);
+    const originalDreamSettingsRaw = settingsStorage.snapshotDreamSettingsRaw();
+    const originalModelSettingsRaw = settingsStorage.snapshotModelSettingsRaw();
+    const sentinelDreamSettingsRaw = '{"prompt":"isolation prompt","maskBlur":41,"maskedContent":"latent nothing","restoreFaces":false,"samplingSteps":11}';
+    const sentinelModelSettingsRaw = '{"sentinel-model":{"samplingMethod":"Euler","samplingSteps":19,"cfgScale":6,"denoisingStrength":0.33,"seed":24680,"restoreFaces":true,"maskBlur":7,"maskedContent":"original"}}';
+    const seededDreamSettingsRaw = {exists: !absentKeys, value: absentKeys ? null : sentinelDreamSettingsRaw};
+    const seededModelSettingsRaw = {exists: !absentKeys, value: absentKeys ? null : sentinelModelSettingsRaw};
+    settingsStorage.restoreDreamSettingsRaw(seededDreamSettingsRaw);
+    settingsStorage.restoreModelSettingsRaw(seededModelSettingsRaw);
+
+    let roundTripResult = null;
+    let roundTripError = null;
+    if (payload.forceFailure) setFailurePoint("during_model_settings_round_trip");
+    try {
+      try {
+        roundTripResult = await this.modelSettingsRoundTrip();
+      } catch (error) {
+        roundTripError = error.message || String(error);
+      }
+      const afterDreamSettingsRaw = settingsStorage.snapshotDreamSettingsRaw();
+      const afterModelSettingsRaw = settingsStorage.snapshotModelSettingsRaw();
+      return {
+        skippedRoundTrip: Boolean(roundTripResult?.skipped),
+        roundTripThrew: roundTripError !== null,
+        roundTripError,
+        dreamSettingsRawRestored: afterDreamSettingsRaw.exists === seededDreamSettingsRaw.exists && afterDreamSettingsRaw.value === seededDreamSettingsRaw.value,
+        modelSettingsRawRestored: afterModelSettingsRaw.exists === seededModelSettingsRaw.exists && afterModelSettingsRaw.value === seededModelSettingsRaw.value,
+        dreamSettingsKeyPresent: afterDreamSettingsRaw.exists,
+        modelSettingsKeyPresent: afterModelSettingsRaw.exists,
+        dreamSettingsRaw: afterDreamSettingsRaw.value,
+        modelSettingsRaw: afterModelSettingsRaw.value,
+      };
+    } finally {
+      clearFailurePoint();
+      settingsStorage.restoreDreamSettingsRaw(originalDreamSettingsRaw);
+      settingsStorage.restoreModelSettingsRaw(originalModelSettingsRaw);
     }
   };
 
@@ -525,6 +573,7 @@ class PhotoshopDevHarness {
       case "generate_inpaint": return this.generate({...payload, inference_type: InferenceType.INPAINT});
       case "cleanup_result_batch": return this.cleanupResultBatch(payload);
       case "model_settings_round_trip": return this.modelSettingsRoundTrip();
+      case "model_settings_isolation_check": return this.modelSettingsIsolationCheck(payload);
       case "lora_prompt_tokens": return this.loraPromptTokens();
       case "history_use_prompt_remount": return this.historyUsePromptRemount();
       case "history_reuse_sampler_steps_remount": return this.historyReuseSamplerStepsRemount();

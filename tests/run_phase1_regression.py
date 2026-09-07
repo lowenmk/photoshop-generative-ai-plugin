@@ -434,6 +434,32 @@ def test_model_settings_refresh():
     assert model_settings_result["refreshPreservedActiveModel"] is True
 
 
+def test_dream_settings_isolation_pass_path():
+    result = call("POST", "/test/model-settings-isolation", json={"forceFailure": False}, request_timeout=180)
+    if result.get("skippedRoundTrip"):
+        raise SkipRegressionTest("Per-model settings round trip was skipped")
+    assert result["roundTripThrew"] is False, result
+    assert result["dreamSettingsRawRestored"] is True, result
+    assert result["modelSettingsRawRestored"] is True, result
+
+
+def test_dream_settings_isolation_failure_path():
+    result = call("POST", "/test/model-settings-isolation", json={"forceFailure": True}, request_timeout=180)
+    assert result["roundTripThrew"] is True, result
+    assert result["dreamSettingsRawRestored"] is True, result
+    assert result["modelSettingsRawRestored"] is True, result
+
+
+def test_dream_settings_isolation_absent_key_path():
+    result = call("POST", "/test/model-settings-isolation", json={"absentKeys": True}, request_timeout=180)
+    if result.get("skippedRoundTrip"):
+        raise SkipRegressionTest("Per-model settings round trip was skipped")
+    assert result["dreamSettingsRawRestored"] is True, result
+    assert result["modelSettingsRawRestored"] is True, result
+    assert result["dreamSettingsKeyPresent"] is False, result
+    assert result["modelSettingsKeyPresent"] is False, result
+
+
 def test_lora_inventory():
     inventory = requests.get(ROOT_URL + "/sd/automatic1111/loras", timeout=20).json()
     assert isinstance(inventory.get("loras"), list)
@@ -638,6 +664,9 @@ def main():
         ("20 Per-model settings save/restore", test_model_settings_round_trip),
         ("21 Per-model settings reload", test_model_settings_reload),
         ("22 Model refresh preserves settings", test_model_settings_refresh),
+        ("43 Dream settings isolation (pass path)", test_dream_settings_isolation_pass_path),
+        ("44 Dream settings isolation (forced failure path)", test_dream_settings_isolation_failure_path),
+        ("45 Dream settings isolation (absent keys)", test_dream_settings_isolation_absent_key_path),
         ("23 LoRA inventory", test_lora_inventory),
         ("24 LoRA prompt token", test_lora_prompt_token),
         ("25 LoRA refresh preserves state", test_lora_refresh_preserves_state),

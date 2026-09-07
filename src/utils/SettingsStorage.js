@@ -65,6 +65,38 @@ class SettingsStorage {
     }
   }
 
+  snapshotRawSetting(key) {
+    const value = localStorage.getItem(key);
+    return {exists: value !== null, value};
+  }
+
+  restoreRawSetting(key, snapshot) {
+    if (key === DREAM_TAB_SETTINGS_KEY) {
+      this.dreamSettingsPendingWrite = {};
+    }
+    if (snapshot && snapshot.exists) {
+      localStorage.setItem(key, snapshot.value);
+    } else {
+      localStorage.removeItem(key);
+    }
+  }
+
+  snapshotDreamSettingsRaw() {
+    return this.snapshotRawSetting(DREAM_TAB_SETTINGS_KEY);
+  }
+
+  restoreDreamSettingsRaw(snapshot) {
+    this.restoreRawSetting(DREAM_TAB_SETTINGS_KEY, snapshot);
+  }
+
+  snapshotModelSettingsRaw() {
+    return this.snapshotRawSetting(MODEL_SETTINGS_KEY);
+  }
+
+  restoreModelSettingsRaw(snapshot) {
+    this.restoreRawSetting(MODEL_SETTINGS_KEY, snapshot);
+  }
+
   writePendingDreamSettingsToLocalStorage = () => {
     // Batching settings writes is good because otherwise we will write them e.g. with every button press when user
     // types the prompt
