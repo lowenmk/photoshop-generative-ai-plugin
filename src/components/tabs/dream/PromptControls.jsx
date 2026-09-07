@@ -9,7 +9,7 @@ import {reconcileLoraSelection} from "../../../utils/loraUtils";
 const NON_ALPHANUMERIC_REGEX = /[^a-z0-9 ]+/g;
 const WORDS_COUNT_FOR_PROMPT_KEY = 3;
 
-const PromptControl = ({label, placeholder, prompt, onPromptChange, storedPrompts, onStoredPromptsChange}) => {
+const PromptControl = ({label, prompt, onPromptChange, storedPrompts, onStoredPromptsChange}) => {
   const [showStoredPrompts, setShowStoredPrompts] = useState(false);
   const alertContext = useContext(AlertContext);
 
@@ -38,7 +38,7 @@ const PromptControl = ({label, placeholder, prompt, onPromptChange, storedPrompt
   return <div className="container flexColumn promptControl">
     <sp-body size="S" class="promptFieldLabel">{label}</sp-body>
     <div className="container flexRow">
-      <sp-textarea class="dreamPromptTextArea" placeholder={placeholder} value={prompt} onInput={(e) => onPromptChange(e.target.value)} />
+      <sp-textarea class="dreamPromptTextArea" value={prompt} onInput={(e) => onPromptChange(e.target.value)} />
       <div className="container flexColumn">
         <sp-action-button class="iconButton" title="Add a prompt shortcut" onClick={() => setShowStoredPrompts(true)}><span slot="icon"><CurlyBracesIcon /></span></sp-action-button>
         <sp-action-button class="iconButton" title="Save prompt as a shortcut" onClick={onStorePrompt}><span slot="icon"><SaveIcon /></span></sp-action-button>
@@ -78,7 +78,7 @@ const LoraControls = ({prompt, onPromptChange}) => {
 };
 
 export const PromptControls = ({prompt, onPromptChange, negativePrompt, onNegativePromptChange, storedPrompts, onStoredPromptsChange}) => <>
-  <PromptControl label="Prompt" placeholder="Prompt (what to dream)" prompt={prompt} onPromptChange={onPromptChange} storedPrompts={storedPrompts} onStoredPromptsChange={onStoredPromptsChange} />
-  <PromptControl label="Negative Prompt" placeholder="Negative prompt (what to avoid dreaming)" prompt={negativePrompt} onPromptChange={onNegativePromptChange} storedPrompts={storedPrompts} onStoredPromptsChange={onStoredPromptsChange} />
+  <PromptControl label="Prompt" prompt={prompt} onPromptChange={onPromptChange} storedPrompts={storedPrompts} onStoredPromptsChange={onStoredPromptsChange} />
+  <PromptControl label="Negative Prompt" prompt={negativePrompt} onPromptChange={onNegativePromptChange} storedPrompts={storedPrompts} onStoredPromptsChange={onStoredPromptsChange} />
   <LoraControls prompt={prompt} onPromptChange={onPromptChange} />
 </>;
