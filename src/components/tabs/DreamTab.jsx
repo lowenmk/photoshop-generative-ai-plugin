@@ -564,7 +564,24 @@ export class DreamTabInternal extends React.Component {
           </div>
 
           <div className="workflowZone promptZone">
-            <sp-label class="zoneLabel">PROMPT</sp-label>
+            <div className="promptHeader">
+              <sp-label class="zoneLabel">PROMPT</sp-label>
+              {cancelButtonShown ? (
+                <sp-button
+                  class="dreamButton promptGenerateButton secondaryAction"
+                  variant="secondary"
+                  disabled={trueOrUndefined(cancelButtonDisabled)}
+                  onClick={() => this.onCancelButtonClick()}
+                >Cancel</sp-button>
+              ) : (
+                <sp-button
+                  class="dreamButton promptGenerateButton primaryAction"
+                  variant="cta"
+                  disabled={trueOrUndefined(dreamButtonDisabled)}
+                  onClick={() => this.onDreamButtonClick()}
+                >Generate</sp-button>
+              )}
+            </div>
             <PromptControls
               prompt={prompt}
               onPromptChange={(prompt) => this.onPromptChange(prompt)}
@@ -573,6 +590,11 @@ export class DreamTabInternal extends React.Component {
               storedPrompts={storedPrompts}
               onStoredPromptsChange={onStoredPromptsChange}
             />
+            {isProcessing ? (
+              <div className="generateProgressBarContainer">
+                <sp-progressbar class="generateProgressBar" max={100} value={progress}></sp-progressbar>
+              </div>
+            ) : null}
           </div>
 
           <div className="workflowZone sourceMaskZone">
@@ -613,26 +635,6 @@ export class DreamTabInternal extends React.Component {
             >
               <sp-label slot="label">Number of images</sp-label>
             </sp-slider>
-            {cancelButtonShown ? (
-              <sp-button
-                class="dreamButton secondaryAction"
-                variant="secondary"
-                disabled={trueOrUndefined(cancelButtonDisabled)}
-                onClick={() => this.onCancelButtonClick()}
-              >Cancel</sp-button>
-            ) : (
-              <sp-button
-                class="dreamButton primaryAction"
-                variant="cta"
-                disabled={trueOrUndefined(dreamButtonDisabled)}
-                onClick={() => this.onDreamButtonClick()}
-              >Generate</sp-button>
-            )}
-            {isProcessing ? (
-              <div className="generateProgressBarContainer">
-                <sp-progressbar class="generateProgressBar" max={100} value={progress}></sp-progressbar>
-              </div>
-            ) : null}
           </div>
 
           <div className="workflowZone advancedZone">
