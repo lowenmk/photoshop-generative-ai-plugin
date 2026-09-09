@@ -97,21 +97,29 @@ class SettingsStorage {
     this.restoreRawSetting(MODEL_SETTINGS_KEY, snapshot);
   }
 
-  writePendingDreamSettingsToLocalStorage = () => {
+  flushPendingDreamSettingsSync = () => {
+    if (Object.keys(this.dreamSettingsPendingWrite).length === 0) {
+      return;
+    }
+
     // Batching settings writes is good because otherwise we will write them e.g. with every button press when user
-    // types the prompt
+    // types the prompt. Explicit callers use the same merge/normalization path before a tab is unmounted.
     const currentSettings = this.getDreamSettings()
     const updatedSettings = {
       ...currentSettings,
       ...this.dreamSettingsPendingWrite,
     }
+    this.dreamSettingsPendingWrite = {};
     if (areObjectsEqual(currentSettings, updatedSettings)) {
       return;
     }
 
-    this.dreamSettingsPendingWrite = {};
     console.log('Saving Dream settings', JSON.stringify(updatedSettings, null, 2))
     localStorage.setItem(DREAM_TAB_SETTINGS_KEY, JSON.stringify(updatedSettings));
+  }
+
+  writePendingDreamSettingsToLocalStorage = () => {
+    this.flushPendingDreamSettingsSync();
   }
 
   getResultsSettings() {

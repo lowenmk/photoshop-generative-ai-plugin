@@ -105,6 +105,11 @@ export class DreamTabInternal extends React.Component {
     this.notifyModelSettingsChange();
   }
 
+  componentWillUnmount() {
+    settingsStorage.saveDreamSettingsBatched(this.state);
+    settingsStorage.flushPendingDreamSettingsSync();
+  }
+
   componentDidUpdate(prevProps, prevState, snapshot) {
     settingsStorage.saveDreamSettingsBatched(this.state);
     if (this.props.modelSettings && this.props.modelSettings !== prevProps.modelSettings) {
