@@ -52,6 +52,13 @@ class TestLauncherTests(unittest.TestCase):
         self.assertIn("exit 1", self.ps_source)
         self.assertNotIn("Existing bridge detected", self.bat_source + self.ps_source)
 
+    def test_uxp_timeout_is_not_reported_as_success(self):
+        self.assertIn("return 124", self.ps_source)
+        self.assertIn("$loadExitCode -eq 124", self.ps_source)
+        self.assertIn("$reloadExitCode -eq 124", self.ps_source)
+        self.assertIn("UXP plugin load timed out.", self.ps_source)
+        self.assertIn("UXP plugin reload timed out.", self.ps_source)
+
     def test_launcher_does_not_manage_a1111_or_uxp_process_lifetime(self):
         source = (self.bat_source + self.ps_source).lower()
         self.assertNotIn("taskkill", source)

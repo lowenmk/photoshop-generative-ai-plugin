@@ -128,7 +128,7 @@ function Invoke-UxpCommand([string[]] $arguments, [int] $timeoutSeconds = 10) {
 
     Write-Host "UXP command did not exit within $timeoutSeconds seconds; stopping its launcher-owned command tree."
     Stop-OwnedBridge $process.Id
-    return 0
+    return 124
 }
 
 function Start-UxpService {
@@ -195,8 +195,17 @@ try {
     Write-Host "Loading/reloading Photoshop plugin..."
     $manifestPath = Join-Path $repoRoot "dist\manifest.json"
     $loadExitCode = Invoke-UxpCommand @("plugin", "load", "--manifest", $manifestPath)
+    if ($loadExitCode -eq 124) {
+        throw "UXP plugin load timed out."
+    }
     if ($loadExitCode -ne 0) {
-        [void](Invoke-UxpCommand @("plugin", "reload", "--manifest", $manifestPath))
+        $reloadExitCode = Invoke-UxpCommand @("plugin", "reload", "--manifest", $manifestPath)
+        if ($reloadExitCode -eq 124) {
+            throw "UXP plugin reload timed out."
+        }
+        if ($reloadExitCode -ne 0) {
+            throw "UXP plugin load and reload failed (load=$loadExitCode, reload=$reloadExitCode)."
+        }
     }
 
     Write-Host ""
